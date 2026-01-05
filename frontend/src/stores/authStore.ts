@@ -3,11 +3,21 @@ import { persist } from 'zustand/middleware'
 import { supabase } from '../lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 
-interface UserProfile {
+export type UserRole = 'operator' | 'owner' | 'viewer'
+
+export interface Tenant {
+  id: string
+  name: string
+  slug: string
+}
+
+export interface UserProfile {
   id: string
   email: string
   full_name?: string
-  role: 'admin' | 'manager' | 'viewer'
+  role: UserRole
+  tenant_id?: string | null
+  tenant?: Tenant | null
 }
 
 interface AuthState {
@@ -37,9 +47,16 @@ export const useAuthStore = create<AuthState>()(
       initialize: async () => {
         try {
           set({ isLoading: true })
+          console.log('[AuthStore] Initializing...')
 
-          // Get current session
-          const { data: { session } } = await supabase.auth.getSession()
+          // Get current session from Supabase
+          const { data: { session }, error } = await supabase.auth.getSession()
+
+          if (error) {
+            console.error('[AuthStore] getSession error:', error)
+          }
+
+          console.log('[AuthStore] Session:', session ? 'found' : 'none')
 
           if (session) {
             set({ user: session.user, session })
@@ -47,7 +64,8 @@ export const useAuthStore = create<AuthState>()(
           }
 
           // Listen for auth changes
-          supabase.auth.onAuthStateChange(async (_event, session) => {
+          supabase.auth.onAuthStateChange(async (event, session) => {
+            console.log('[AuthStore] Auth state changed:', event)
             set({ user: session?.user ?? null, session })
 
             if (session) {
@@ -58,11 +76,13 @@ export const useAuthStore = create<AuthState>()(
           })
         } finally {
           set({ isLoading: false, isInitialized: true })
+          console.log('[AuthStore] Initialized')
         }
       },
 
       login: async (email: string, password: string) => {
         set({ isLoading: true })
+        console.log('[AuthStore] Logging in:', email)
 
         try {
           const { data, error } = await supabase.auth.signInWithPassword({
@@ -71,9 +91,11 @@ export const useAuthStore = create<AuthState>()(
           })
 
           if (error) {
+            console.error('[AuthStore] Login error:', error.message)
             return { error: error.message }
           }
 
+          console.log('[AuthStore] Login successful, fetching profile...')
           set({ user: data.user, session: data.session })
           await get().fetchProfile()
 
@@ -114,11 +136,17 @@ export const useAuthStore = create<AuthState>()(
 
       fetchProfile: async () => {
         const { session } = get()
-        if (!session) return
+        if (!session) {
+          console.warn('[AuthStore] No session, skipping profile fetch')
+          return
+        }
 
         try {
+          const apiUrl = import.meta.env.VITE_API_URL
+          console.log('[AuthStore] Fetching profile from:', `${apiUrl}/auth/me`)
+
           const response = await fetch(
-            `${import.meta.env.VITE_API_URL}/auth/me`,
+            `${apiUrl}/auth/me`,
             {
               headers: {
                 Authorization: `Bearer ${session.access_token}`,
@@ -126,12 +154,17 @@ export const useAuthStore = create<AuthState>()(
             }
           )
 
-          if (response.ok) {
-            const profile = await response.json()
-            set({ profile })
+          if (!response.ok) {
+            const errorText = await response.text()
+            console.error('[AuthStore] Profile fetch failed:', response.status, errorText)
+            return
           }
+
+          const profile = await response.json()
+          console.log('[AuthStore] Profile loaded:', profile)
+          set({ profile })
         } catch (error) {
-          console.error('Failed to fetch profile:', error)
+          console.error('[AuthStore] Failed to fetch profile:', error)
         }
       },
     }),

@@ -11,6 +11,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from routes.auth import router as auth_router
+from routes.tenant import router as tenant_router
+from routes.data import router as data_router
+from routes.analytics import router as analytics_router
 
 app = FastAPI(
     title="Restaurant Analytics API",
@@ -56,3 +59,6 @@ async def root():
 
 # Include routers
 app.include_router(auth_router)
+app.include_router(tenant_router)
+app.include_router(data_router)
+app.include_router(analytics_router)

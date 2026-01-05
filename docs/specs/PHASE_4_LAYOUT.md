@@ -1,24 +1,30 @@
 # Phase 4: App Layout
 
 > **Goal:** Shell, sidebar, header, global filters working.
-> **Branch:** `feature/phase-4-layout`
+> **Branch:** `main`
 
 ---
 
 ## Deliverables
 
 ### Components
-- [ ] `src/components/layout/AppShell.tsx`
-- [ ] `src/components/layout/Sidebar.tsx`
-- [ ] `src/components/layout/Header.tsx`
-- [ ] `src/components/layout/GlobalFilters.tsx`
+- [x] `src/components/layout/AppShell.tsx`
+- [x] `src/components/layout/Sidebar.tsx`
+- [x] `src/components/layout/Header.tsx`
+- [x] `src/components/layout/GlobalFilters.tsx`
 
 ### State
-- [ ] `src/stores/uiStore.ts` - Sidebar state, filters
+- [x] `src/stores/uiStore.ts` - Sidebar state
+- [x] `src/stores/filterStore.ts` - Global filters with URL sync
 
 ### Routing
-- [ ] Dashboard routes setup
-- [ ] Nested layout structure
+- [x] Dashboard routes setup
+- [x] Nested layout structure with `<Outlet>`
+
+### UI Components
+- [x] `src/components/ui/MultiSelect.tsx`
+- [x] `src/components/ui/DateRangePicker.tsx`
+- [x] `src/modules/shared/PlaceholderPage.tsx`
 
 ---
 
@@ -28,11 +34,10 @@
 ┌──────────────────────────────────────────────┐
 │  Header (tenant name, user menu)             │
 ├────────┬─────────────────────────────────────┤
-│        │                                     │
-│ Sidebar│        Main Content                 │
-│  (nav) │        (page component)             │
-│        │                                     │
-│        │                                     │
+│        │  GlobalFilters                      │
+│ Sidebar│─────────────────────────────────────│
+│  (nav) │        Main Content                 │
+│        │        (page component)             │
 │        │                                     │
 └────────┴─────────────────────────────────────┘
 ```
@@ -49,16 +54,16 @@
 - Categories
 - Recommendations
 ---
-- Settings (owner only)
+- Settings (owner/operator only)
 ```
 
 ---
 
 ## Global Filters
 
-- Date range picker
-- Branch multi-select
-- Category multi-select
+- Date range picker (react-day-picker + date-fns)
+- Branch multi-select (custom Tailwind component)
+- Category multi-select (custom Tailwind component)
 
 Filters persist in URL params for shareability.
 
@@ -66,12 +71,27 @@ Filters persist in URL params for shareability.
 
 ## Acceptance Criteria
 
-- [ ] Shell renders with sidebar and header
-- [ ] Sidebar collapses on mobile
-- [ ] Navigation works
-- [ ] Filters update URL params
-- [ ] Filter state persists on navigation
+- [x] Shell renders with sidebar and header
+- [x] Sidebar collapses on mobile (drawer overlay)
+- [x] Navigation works (active page gold highlight)
+- [x] Filters update URL params
+- [x] Filter state persists on navigation
 
 ---
 
-*Phase 4 complete when all acceptance criteria checked.*
+## Dependencies Added
+
+```bash
+npm install react-day-picker date-fns lucide-react
+```
+
+---
+
+## Notes
+
+- Branch filter blocked by Phase 3 issue (missing `store_name` column) - see `docs/specs/PHASE_3_DATA.md`
+- Navy + Gold design system colors configured in `src/index.css` using Tailwind v4 `@theme`
+
+---
+
+*Phase 4 COMPLETE*

@@ -1,53 +1,62 @@
 # Phase 6: Chart Components
 
 > **Goal:** Reusable chart wrappers with consistent styling.
-> **Branch:** `feature/phase-6-charts`
+> **Branch:** `main`
+> **Status:** COMPLETE
 
 ---
 
 ## Deliverables
 
 ### Components
-- [ ] `src/components/charts/LineChart.tsx`
-- [ ] `src/components/charts/BarChart.tsx`
-- [ ] `src/components/charts/DonutChart.tsx`
-- [ ] `src/components/charts/Heatmap.tsx`
-- [ ] `src/components/charts/ScatterPlot.tsx`
-- [ ] `src/components/charts/ChartContainer.tsx` (loading, empty states)
+- [x] `src/components/charts/LineChart.tsx`
+- [x] `src/components/charts/BarChart.tsx`
+- [x] `src/components/charts/DonutChart.tsx`
+- [x] `src/components/charts/Heatmap.tsx`
+- [x] `src/components/charts/MenuEngineeringScatter.tsx` (quadrant scatter)
+- [x] `src/components/charts/ChartContainer.tsx` (loading, empty states)
+- [x] `src/components/charts/ChartSkeleton.tsx` (5 skeleton variants)
 
 ### Config
-- [ ] `src/lib/chartConfig.ts` - Colors, defaults
+- [x] `src/lib/chartConfig.ts` - Colors, formatters, defaults
+
+### Backend
+- [x] `GET /api/analytics/hourly-heatmap` - Day × Hour aggregation
 
 ---
 
 ## Chart Wrapper Pattern
 
 ```tsx
-<ChartContainer title="Revenue by Category" loading={isLoading} empty={!data}>
-  <BarChart data={data} xKey="category" yKey="revenue" />
+import { ChartContainer, BarChart } from '@/components/charts';
+import { formatCurrency } from '@/lib/chartConfig';
+
+<ChartContainer
+  title="Revenue by Category"
+  subtitle="Total: ₱2.4M"
+  loading={isLoading}
+  empty={!data}
+  skeletonType="bar"
+>
+  <BarChart
+    data={data}
+    xKey="category"
+    bars={[{ key: 'revenue' }]}
+    formatY={formatCurrency}
+  />
 </ChartContainer>
 ```
 
 ---
 
-## Standard Config
-
-See `docs/DESIGN_SYSTEM.md` for:
-- Color palette (6 colors)
-- Grid styling
-- Tooltip styling
-- Axis formatting
-
----
-
 ## Acceptance Criteria
 
-- [ ] All chart types render correctly
-- [ ] Loading states show skeleton
-- [ ] Empty states show message
-- [ ] Tooltips work
-- [ ] Responsive on mobile
+- [x] All chart types render correctly
+- [x] Loading states show skeleton
+- [x] Empty states show message
+- [x] Tooltips work
+- [x] Responsive on mobile
 
 ---
 
-*Phase 6 complete when all acceptance criteria checked.*
+*Phase 6 complete: 2025-12-31*

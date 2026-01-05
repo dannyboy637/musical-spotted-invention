@@ -2,7 +2,7 @@
 -- Run this in Supabase SQL Editor (Dashboard → SQL Editor → New Query)
 
 -- Create enum for user roles
-CREATE TYPE user_role AS ENUM ('admin', 'manager', 'viewer');
+CREATE TYPE user_role AS ENUM ('operator', 'owner', 'viewer');
 
 -- Create users table that extends auth.users
 CREATE TABLE public.users (
@@ -23,36 +23,36 @@ CREATE POLICY "Users can read own data"
     FOR SELECT
     USING (auth.uid() = id);
 
--- Policy: Admins can read all users
-CREATE POLICY "Admins can read all users"
+-- Policy: Operators can read all users
+CREATE POLICY "Operators can read all users"
     ON public.users
     FOR SELECT
     USING (
         EXISTS (
             SELECT 1 FROM public.users
-            WHERE id = auth.uid() AND role = 'admin'
+            WHERE id = auth.uid() AND role = 'operator'
         )
     );
 
--- Policy: Admins can update any user
-CREATE POLICY "Admins can update users"
+-- Policy: Operators can update any user
+CREATE POLICY "Operators can update users"
     ON public.users
     FOR UPDATE
     USING (
         EXISTS (
             SELECT 1 FROM public.users
-            WHERE id = auth.uid() AND role = 'admin'
+            WHERE id = auth.uid() AND role = 'operator'
         )
     );
 
--- Policy: Admins can insert users
-CREATE POLICY "Admins can insert users"
+-- Policy: Operators can insert users
+CREATE POLICY "Operators can insert users"
     ON public.users
     FOR INSERT
     WITH CHECK (
         EXISTS (
             SELECT 1 FROM public.users
-            WHERE id = auth.uid() AND role = 'admin'
+            WHERE id = auth.uid() AND role = 'operator'
         )
     );
 

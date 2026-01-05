@@ -1,44 +1,48 @@
 import { useAuthStore } from '../../stores/authStore'
+import { useTenantStore } from '../../stores/tenantStore'
+import { PageHeader } from '../../components/layout/PageHeader'
+import { KPISection } from './KPISection'
+import { RevenueTrendChart } from './RevenueTrendChart'
+import { TopItemsTable } from './TopItemsTable'
+import { BottomItemsTable } from './BottomItemsTable'
 
 export function DashboardPage() {
-  const { user, profile, logout } = useAuthStore()
+  const { profile } = useAuthStore()
+  const { activeTenant } = useTenantStore()
 
-  return (
-    <div className="min-h-screen bg-gray-100">
-      <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold text-gray-900">
-            Restaurant Analytics
-          </h1>
-          <div className="flex items-center gap-4">
-            <span className="text-gray-600 text-sm">
-              {user?.email}
-              {profile?.role && (
-                <span className="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">
-                  {profile.role}
-                </span>
-              )}
-            </span>
-            <button
-              onClick={logout}
-              className="text-sm text-gray-600 hover:text-gray-900"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </nav>
+  // For operators, show active tenant; for others, show their assigned tenant
+  const currentTenant = profile?.role === 'operator' ? activeTenant : profile?.tenant
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Welcome{profile?.full_name ? `, ${profile.full_name}` : ''}!
-          </h2>
-          <p className="text-gray-600">
-            Dashboard content coming in Phase 2.
+  if (!currentTenant) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Dashboard" />
+        <div className="bg-white rounded-lg border border-slate-200 p-8 text-center">
+          <p className="text-slate-600">
+            {profile?.role === 'operator'
+              ? 'Select a tenant from the header to view their data.'
+              : 'No tenant assigned. Contact your administrator.'}
           </p>
         </div>
-      </main>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader title="Dashboard" subtitle={`Overview for ${currentTenant.name}`} />
+
+      {/* KPI Cards */}
+      <KPISection />
+
+      {/* Revenue Trend Chart */}
+      <RevenueTrendChart />
+
+      {/* Top and Bottom Items */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <TopItemsTable />
+        <BottomItemsTable />
+      </div>
     </div>
   )
 }

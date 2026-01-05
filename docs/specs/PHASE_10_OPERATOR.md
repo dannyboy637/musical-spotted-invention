@@ -174,21 +174,13 @@ CREATE INDEX idx_api_metrics_endpoint ON api_metrics(endpoint);
 ```
 
 ### data_sync_jobs
+> **Note:** This functionality already exists in the `data_import_jobs` table created in Phase 3.
+> Use the existing table rather than creating a new one. Add any missing columns if needed.
+
 ```sql
-CREATE TABLE data_sync_jobs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
-    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed')),
-    file_name TEXT,
-    file_size_bytes INTEGER,
-    rows_processed INTEGER DEFAULT 0,
-    rows_inserted INTEGER DEFAULT 0,
-    rows_skipped INTEGER DEFAULT 0,
-    error_message TEXT,
-    started_at TIMESTAMPTZ,
-    completed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Existing table: data_import_jobs (from Phase 3)
+-- Already has: id, tenant_id, status, file_name, row_count, error_message, timestamps
+-- May need to add: file_size_bytes, rows_processed, rows_inserted, rows_skipped
 ```
 
 ### operator_tasks

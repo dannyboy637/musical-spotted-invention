@@ -1,0 +1,100 @@
+import { useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { X } from 'lucide-react'
+import { DateRangePicker } from '../ui/DateRangePicker'
+import { MultiSelect } from '../ui/MultiSelect'
+import {
+  useFilterStore,
+  filtersToSearchParams,
+  searchParamsToFilters,
+} from '../../stores/filterStore'
+
+export function GlobalFilters() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const {
+    dateRange,
+    branches,
+    categories,
+    availableBranches,
+    availableCategories,
+    setDateRange,
+    setBranches,
+    setCategories,
+    clearFilters,
+  } = useFilterStore()
+
+  const hasActiveFilters = dateRange !== null || branches.length > 0 || categories.length > 0
+
+  // Sync from URL on mount
+  useEffect(() => {
+    const urlFilters = searchParamsToFilters(searchParams)
+
+    if (urlFilters.dateRange) {
+      setDateRange(urlFilters.dateRange)
+    }
+    if (urlFilters.branches) {
+      setBranches(urlFilters.branches)
+    }
+    if (urlFilters.categories) {
+      setCategories(urlFilters.categories)
+    }
+  }, []) // Only on mount
+
+  // Sync to URL when filters change
+  useEffect(() => {
+    const params = filtersToSearchParams({ dateRange, branches, categories } as any)
+
+    // Only update if params actually changed
+    const currentParams = searchParams.toString()
+    const newParams = params.toString()
+
+    if (currentParams !== newParams) {
+      setSearchParams(params, { replace: true })
+    }
+  }, [dateRange, branches, categories])
+
+  return (
+    <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 lg:px-6 py-3">
+      <div className="flex flex-wrap items-end gap-4">
+        {/* Date Range */}
+        <div className="w-full sm:w-auto min-w-[280px]">
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
+        </div>
+
+        {/* Branches */}
+        <div className="w-full sm:w-auto min-w-[180px]">
+          <MultiSelect
+            label="Branches"
+            options={availableBranches}
+            selected={branches}
+            onChange={setBranches}
+            placeholder="All branches"
+          />
+        </div>
+
+        {/* Categories */}
+        <div className="w-full sm:w-auto min-w-[180px]">
+          <MultiSelect
+            label="Categories"
+            options={availableCategories}
+            selected={categories}
+            onChange={setCategories}
+            placeholder="All categories"
+          />
+        </div>
+
+        {/* Clear All Filters */}
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors self-end"
+          >
+            <X size={14} />
+            <span>Clear filters</span>
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
