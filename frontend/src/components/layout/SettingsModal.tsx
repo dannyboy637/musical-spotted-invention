@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { X, Bell } from 'lucide-react'
 import {
   useSettingsStore,
   AVAILABLE_KPIS,
@@ -7,6 +7,9 @@ import {
   THEME_OPTIONS,
   TABLE_ROWS_OPTIONS,
 } from '../../stores/settingsStore'
+import { useAuthStore } from '../../stores/authStore'
+import { useAlertSettings, useUpdateAlertSettings } from '../../hooks/useAlerts'
+import { Spinner } from '../ui/Spinner'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -27,6 +30,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setTableRowsPerPage,
     resetToDefaults,
   } = useSettingsStore()
+
+  const { profile } = useAuthStore()
+  const isOwnerOrOperator = profile?.role === 'owner' || profile?.role === 'operator'
+
+  // Alert settings (only loaded for owner/operator)
+  const { data: alertSettings, isLoading: alertSettingsLoading } = useAlertSettings()
+  const updateAlertSettings = useUpdateAlertSettings()
 
   if (!isOpen) return null
 
@@ -198,6 +208,128 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 ))}
               </div>
             </section>
+
+            {/* Alert Settings (Owner/Operator only) */}
+            {isOwnerOrOperator && (
+              <section className="border-t border-slate-200 dark:border-slate-700 pt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Bell className="w-4 h-4 text-slate-500" />
+                  <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">Alert Thresholds</h3>
+                </div>
+                {alertSettingsLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Spinner size="sm" />
+                  </div>
+                ) : alertSettings ? (
+                  <div className="space-y-4">
+                    {/* Revenue Drop Threshold */}
+                    <div>
+                      <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">
+                        Revenue drop alert threshold
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="5"
+                          max="50"
+                          step="5"
+                          value={alertSettings.revenue_drop_pct}
+                          onChange={(e) =>
+                            updateAlertSettings.mutate({ revenue_drop_pct: parseInt(e.target.value) })
+                          }
+                          className="flex-1"
+                        />
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 w-12 text-right">
+                          {alertSettings.revenue_drop_pct}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Alert when revenue drops by this percentage week-over-week
+                      </p>
+                    </div>
+
+                    {/* Item Spike Threshold */}
+                    <div>
+                      <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">
+                        Item sales spike threshold
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="25"
+                          max="100"
+                          step="5"
+                          value={alertSettings.item_spike_pct}
+                          onChange={(e) =>
+                            updateAlertSettings.mutate({ item_spike_pct: parseInt(e.target.value) })
+                          }
+                          className="flex-1"
+                        />
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 w-12 text-right">
+                          {alertSettings.item_spike_pct}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Alert when an item's sales spike by this percentage
+                      </p>
+                    </div>
+
+                    {/* Item Crash Threshold */}
+                    <div>
+                      <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">
+                        Item sales crash threshold
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="25"
+                          max="100"
+                          step="5"
+                          value={alertSettings.item_crash_pct}
+                          onChange={(e) =>
+                            updateAlertSettings.mutate({ item_crash_pct: parseInt(e.target.value) })
+                          }
+                          className="flex-1"
+                        />
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 w-12 text-right">
+                          {alertSettings.item_crash_pct}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Alert when an item's sales drop by this percentage
+                      </p>
+                    </div>
+
+                    {/* Quadrant Alerts Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                          Quadrant change alerts
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Alert when items move to Star or Dog quadrants
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={alertSettings.quadrant_alerts_enabled}
+                          onChange={(e) =>
+                            updateAlertSettings.mutate({ quadrant_alerts_enabled: e.target.checked })
+                          }
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-navy-300 dark:peer-focus:ring-navy-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-navy-600"></div>
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Unable to load alert settings
+                  </p>
+                )}
+              </section>
+            )}
           </div>
 
           {/* Footer */}

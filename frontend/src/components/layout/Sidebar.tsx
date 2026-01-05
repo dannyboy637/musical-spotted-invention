@@ -9,6 +9,7 @@ import {
   Lightbulb,
   DollarSign,
   Database,
+  Bell,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -25,6 +26,7 @@ const navItems = [
   { to: '/categories', icon: FolderOpen, label: 'Categories' },
   { to: '/branches', icon: GitBranch, label: 'Branches' },
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
+  { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/costs', icon: DollarSign, label: 'Costs', ownerOnly: true },
   { to: '/data-management', icon: Database, label: 'Data', ownerOnly: true },
 ]

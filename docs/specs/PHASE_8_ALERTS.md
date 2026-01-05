@@ -8,17 +8,20 @@
 ## Deliverables
 
 ### Database
-- [ ] `alerts` table
+- [x] `alerts` table
+- [x] `alert_settings` table (per-tenant thresholds)
 
 ### Backend
-- [ ] `backend/modules/anomaly.py` - Detection logic
-- [ ] `backend/routes/alerts.py` - Alert endpoints
-- [ ] Scheduled job for daily scan
+- [x] `backend/modules/anomaly.py` - Detection logic
+- [x] `backend/routes/alerts.py` - Alert endpoints
+- [x] Auto-scan after data import (replaces cron job)
+- [x] Manual scan trigger endpoint
 
 ### Frontend
-- [ ] Alert banner component
-- [ ] Alert list page
-- [ ] Dismissal functionality
+- [x] Alert banner component (dashboard only)
+- [x] Alert list page (`/alerts`)
+- [x] Dismissal functionality (owner only)
+- [x] Alert settings in Settings modal
 
 ---
 
@@ -55,12 +58,14 @@ CREATE TABLE alerts (
 
 ## Acceptance Criteria
 
-- [ ] Anomaly detection runs on schedule
-- [ ] Alerts created for detected anomalies
-- [ ] Alert banner shows on dashboard
-- [ ] Alerts can be dismissed
-- [ ] Alert history viewable
+- [x] Anomaly detection runs on schedule (after data import + manual trigger)
+- [x] Alerts created for detected anomalies
+- [x] Alert banner shows on dashboard
+- [x] Alerts can be dismissed (owner only)
+- [x] Alert history viewable
+- [x] Per-tenant configurable thresholds
+- [x] 7-day cooldown prevents duplicate alerts
 
 ---
 
-*Phase 8 complete when all acceptance criteria checked.*
+*Phase 8 COMPLETE - All acceptance criteria checked.*

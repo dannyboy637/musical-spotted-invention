@@ -13,6 +13,7 @@ from modules.data_processing import (
     calculate_receipt_subtotals,
     transform_storehub_row,
 )
+from modules.anomaly import run_anomaly_scan
 
 
 class ImportService:
@@ -189,6 +190,15 @@ class ImportService:
             date_range_end=date_range_end.date().isoformat() if date_range_end and pd.notna(date_range_end) else None,
         )
 
+        # Run anomaly detection after successful import
+        alerts_created = 0
+        try:
+            print("Running anomaly detection scan...", flush=True)
+            alerts_created = run_anomaly_scan(self.tenant_id)
+            print(f"Anomaly scan complete: {alerts_created} alerts created", flush=True)
+        except Exception as e:
+            print(f"Warning: Anomaly scan failed: {e}", flush=True)
+
         return {
             "job_id": self.job_id,
             "total_rows": total_rows,
@@ -196,6 +206,7 @@ class ImportService:
             "inserted_rows": inserted,
             "skipped_rows": total_rows - len(items_df),
             "error_count": len(errors),
+            "alerts_created": alerts_created,
         }
 
     def regenerate_menu_items(self) -> int:

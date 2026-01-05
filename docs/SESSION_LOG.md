@@ -399,6 +399,94 @@ Run `backend/migrations/002_create_tenants_table.sql` in Supabase SQL Editor
 
 ---
 
+## 2026-01-05 - Phase 8: Alerts & Anomaly Detection Complete
+
+**Duration:** ~2 hours
+**Branch:** main
+
+**What was done:**
+
+### Database
+- Created `012_create_alerts_system.sql` migration:
+  - `alert_settings` table: per-tenant configurable thresholds
+  - `alerts` table: alert records with fingerprint for deduplication
+  - RLS policies for tenant isolation, owner-only dismiss
+  - `get_or_create_alert_settings()` RPC function
+
+### Backend
+- Created `backend/modules/anomaly.py` - Anomaly detection engine:
+  - Revenue drop detection (week-over-week comparison)
+  - Item spike/crash detection (week-over-week per item)
+  - Quadrant change detection (month-over-month Star/Dog moves)
+  - 7-day cooldown via fingerprint to prevent duplicate alerts
+  - Uses latest transaction date (not today) for historical data support
+- Created `backend/routes/alerts.py` - REST API:
+  - `GET /api/alerts` - List alerts with filters (type, severity, active_only)
+  - `POST /api/alerts/{id}/dismiss` - Owner-only dismiss
+  - `POST /api/alerts/scan` - Manual trigger
+  - `GET/PUT /api/alerts/settings` - Per-tenant thresholds
+- Updated `import_service.py` - Auto-runs anomaly scan after data import
+
+### Frontend
+- Created `useAlerts.ts` hook - React Query hooks for alerts API
+- Created `AlertBanner.tsx` - Dashboard banner showing top alert + count
+- Created `AlertsPage.tsx` - Full alerts list with:
+  - Type and severity filters
+  - Show/hide dismissed toggle
+  - Manual scan trigger button
+  - Dismiss functionality (owner only)
+- Added alert settings to `SettingsModal.tsx`:
+  - Revenue drop threshold slider (5-50%)
+  - Item spike threshold slider (25-100%)
+  - Item crash threshold slider (25-100%)
+  - Quadrant alerts toggle
+- Added Alerts link to sidebar navigation
+- Added `/alerts` route to App.tsx
+
+### QOL Enhancement
+- Added current date/time display in header (right side)
+  - Format: "Jan 5, 2026 · 10:30 AM"
+  - Updates every minute
+  - Hidden on mobile to save space
+
+### Bug Fixes
+- Fixed anomaly detection using "today" instead of latest transaction date
+- Fixed `gross_amount` → `gross_revenue` column name in quadrant detection
+
+**Testing:**
+- Ran scan successfully: 15 alerts created (6 new Dogs, 3 new Stars, etc.)
+- Alert banner displays on dashboard
+- Dismiss functionality works
+- Settings sliders update thresholds
+
+**Files created:**
+- `backend/migrations/012_create_alerts_system.sql`
+- `backend/modules/anomaly.py`
+- `backend/routes/alerts.py`
+- `frontend/src/hooks/useAlerts.ts`
+- `frontend/src/components/alerts/AlertBanner.tsx`
+- `frontend/src/modules/alerts/AlertsPage.tsx`
+- `frontend/src/modules/alerts/index.ts`
+
+**Files modified:**
+- `backend/main.py` - Added alerts router
+- `backend/services/import_service.py` - Auto-scan after import
+- `frontend/src/App.tsx` - Added /alerts route
+- `frontend/src/components/layout/Header.tsx` - Added date/time display
+- `frontend/src/components/layout/Sidebar.tsx` - Added Alerts nav item
+- `frontend/src/components/layout/SettingsModal.tsx` - Added alert settings
+- `frontend/src/modules/dashboard/DashboardPage.tsx` - Added AlertBanner
+
+**What's next:**
+- Phase 9 or additional features as needed
+
+**Blockers/Issues:**
+- None
+
+**Phase 8 Status:** COMPLETE
+
+---
+
 ## Template
 
 ```markdown

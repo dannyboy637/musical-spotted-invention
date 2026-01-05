@@ -5,15 +5,33 @@
 
 ---
 
-## Active Phase: Phase 8 - Alerts & Notifications (Not Started)
+## Active Phase: Phase 8 - Alerts & Notifications (COMPLETE)
 
 **Branch:** `main`
 **Spec:** `docs/specs/PHASE_8_ALERTS.md`
-**Status:** Not started - Scheduled alerts and anomaly detection
+**Status:** Complete - Anomaly detection and alert system implemented
 
 ---
 
 ## Completed Phases
+
+### Phase 8: Alerts & Anomaly Detection - COMPLETE
+- Database: `alerts`, `alert_settings` tables with RLS
+- Backend: Anomaly detection module (`modules/anomaly.py`)
+  - Revenue drop detection (week-over-week comparison)
+  - Item spike/crash detection (week-over-week comparison)
+  - Quadrant change detection (month-over-month comparison)
+  - 7-day cooldown to prevent duplicate alerts
+- Backend: Alerts API (`routes/alerts.py`)
+  - `GET /api/alerts` - List alerts with filters
+  - `POST /api/alerts/{id}/dismiss` - Owner-only dismiss
+  - `POST /api/alerts/scan` - Manual trigger
+  - `GET/PUT /api/alerts/settings` - Per-tenant thresholds
+- Auto-scan after data import
+- Frontend: AlertBanner on dashboard (top alert + count)
+- Frontend: AlertsPage (`/alerts`) with list, filters, scan button
+- Frontend: Alert settings in Settings modal (owner/operator only)
+- Per-tenant configurable thresholds (revenue %, item %, quadrant toggle)
 
 ### Phase 7: Dashboard Modules - COMPLETE
 All dashboard pages implemented with full functionality:
@@ -132,17 +150,19 @@ backend/
 ├── db/supabase.py               # Supabase client
 ├── middleware/auth.py           # JWT validation, tenant context
 ├── modules/
-│   └── data_processing.py       # Legacy business logic (categories, service charge)
+│   ├── data_processing.py       # Legacy business logic (categories, service charge)
+│   └── anomaly.py               # Anomaly detection (revenue, items, quadrants)
 ├── services/
 │   └── import_service.py        # CSV import orchestration
 ├── routes/
 │   ├── auth.py                  # Auth endpoints
 │   ├── tenant.py                # Tenant CRUD (operator only)
 │   ├── data.py                  # Data import/transactions/menu-items
-│   └── analytics.py             # Dashboard analytics endpoints
+│   ├── analytics.py             # Dashboard analytics endpoints
+│   └── alerts.py                # Alerts CRUD, scan trigger, settings
 ├── scripts/
 │   └── import_storehub.py       # CLI import tool
-└── migrations/                  # SQL migrations (000-011)
+└── migrations/                  # SQL migrations (000-012)
 
 frontend/src/
 ├── lib/
@@ -156,7 +176,8 @@ frontend/src/
 │   ├── settingsStore.ts         # User preferences
 │   └── uiStore.ts               # UI state (sidebar)
 ├── hooks/
-│   └── useAnalytics.ts          # React Query hooks for analytics API
+│   ├── useAnalytics.ts          # React Query hooks for analytics API
+│   └── useAlerts.ts             # React Query hooks for alerts API
 ├── modules/
 │   ├── auth/                    # Login, ForgotPassword pages
 │   ├── dashboard/               # Executive dashboard
@@ -167,11 +188,13 @@ frontend/src/
 │   ├── categories/              # Category deep dive
 │   ├── recommendations/         # Rule-based suggestions, bundles
 │   ├── costs/                   # Cost input, margin calculations
-│   └── data-management/         # Import, transactions view
+│   ├── data-management/         # Import, transactions view
+│   └── alerts/                  # Alerts list page
 ├── components/
 │   ├── layout/                  # AppShell, Sidebar, Header, GlobalFilters
 │   ├── ui/                      # Spinner, DateRangePicker, MultiSelect, etc.
-│   └── charts/                  # Chart components (LineChart, BarChart, etc.)
+│   ├── charts/                  # Chart components (LineChart, BarChart, etc.)
+│   └── alerts/                  # AlertBanner component
 ```
 
 ---

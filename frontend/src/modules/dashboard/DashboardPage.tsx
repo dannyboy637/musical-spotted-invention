@@ -1,6 +1,7 @@
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { AlertBanner } from '../../components/alerts/AlertBanner'
 import { KPISection } from './KPISection'
 import { RevenueTrendChart } from './RevenueTrendChart'
 import { TopItemsTable } from './TopItemsTable'
@@ -31,6 +32,9 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Dashboard" subtitle={`Overview for ${currentTenant.name}`} />
+
+      {/* Alert Banner */}
+      <AlertBanner />
 
       {/* KPI Cards */}
       <KPISection />
