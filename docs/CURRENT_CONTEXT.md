@@ -5,14 +5,60 @@
 
 ---
 
-## Active Phase: Phase 11 Complete
+## Active Phase: Phase 12.5 - Pre-Aggregated Summary Tables (Planning)
 
 **Branch:** `main`
-**Status:** Phase 11 (Polish & Hardening) complete - Production-ready quality
+**Status:** Brainstorming
+**Spec:** `docs/specs/PHASE_12.5_SUMMARY_TABLES.md`
+
+### Concept
+Port the MVP's parquet-per-dashboard pattern to Supabase:
+- `hourly_summaries` - For overview, dayparting, heatmap, trends
+- `item_pairs` - For bundle analysis, recommendations
+- `branch_summaries` - For branch comparison
+- `menu_items` - Already exists ✅
+
+### Expected Impact
+- Dashboard load: 1-5s → <200ms
+- Scales to millions of transactions
+- Refresh after each import (~30s overhead)
+
+### Demo Restaurant Config
+- **Tenant ID:** `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+- **Branches:** Main Branch, Downtown, Mall Outlet, Airport, University
+- **Test Users:**
+  - `demo-owner@test.com` (owner)
+  - `demo-viewer@test.com` (viewer)
+  - Password: `DemoTest123!`
 
 ---
 
 ## Completed Phases
+
+### Phase 12: Second Tenant Validation - COMPLETE
+- **Demo Restaurant Tenant:**
+  - Migration `028_create_demo_tenant.sql` - tenant record
+  - Script `setup_demo_tenant.py` - creates tenant + test users
+  - Script `generate_demo_data.py` - 18 months realistic data (666k transactions)
+  - Script `verify_data_isolation.py` - automated isolation tests
+- **Documentation:**
+  - `ONBOARDING_CHECKLIST.md` - operator internal guide
+  - `CLIENT_WELCOME_GUIDE.md` - client-facing feature overview
+  - `PHASE_12_VALIDATION_CHECKLIST.md` - manual testing checklist
+- **Performance Optimizations:**
+  - Migration `030_optimize_all_analytics_functions.sql` - all 8 RPC functions optimized
+  - TIMESTAMPTZ comparisons (enables index usage)
+  - 90-day default date range (prevents full-table scans)
+  - MATERIALIZED CTEs (prevents redundant computation)
+  - 30s statement timeout per function
+  - Supabase client timeout: 120s (was ~10s default)
+- **Bug Fixes:**
+  - Theme toggle: Fixed Tailwind v4 dark mode configuration
+- **Validation Results:**
+  - All dashboard modules working
+  - Data isolation verified (no cross-tenant leakage)
+  - Role permissions working correctly
+  - Performance acceptable after migration 030
 
 ### Phase 11: Polish & Hardening - COMPLETE
 - **Error Handling:**
@@ -247,8 +293,11 @@ backend/
 │   └── reports.py               # Reports CRUD, generate, send
 ├── scripts/
 │   ├── import_storehub.py       # CLI import tool
-│   └── generate_weekly_reports.py  # Cron script for weekly reports
-└── migrations/                  # SQL migrations (000-015)
+│   ├── generate_weekly_reports.py  # Cron script for weekly reports
+│   ├── setup_demo_tenant.py     # Phase 12: Create demo tenant + users
+│   ├── generate_demo_data.py    # Phase 12: Generate 18 months test data
+│   └── verify_data_isolation.py # Phase 12: Automated isolation tests
+└── migrations/                  # SQL migrations (000-028)
 
 frontend/src/
 ├── lib/
@@ -288,6 +337,22 @@ frontend/src/
 ---
 
 ## Recent Changes (Jan 2026)
+
+### Phase 12: Second Tenant Validation (Jan 6, 2026) - IN PROGRESS
+- **Setup Scripts:**
+  - `setup_demo_tenant.py` - Creates Demo Restaurant tenant + test users
+  - `generate_demo_data.py` - Generates 18 months of realistic transaction data
+  - `verify_data_isolation.py` - Automated tests for tenant isolation
+- **Migration:** `028_create_demo_tenant.sql` - Demo Restaurant tenant record
+- **Documentation:**
+  - `ONBOARDING_CHECKLIST.md` - Internal operator onboarding guide
+  - `CLIENT_WELCOME_GUIDE.md` - Client-facing feature overview
+  - `PHASE_12_VALIDATION_CHECKLIST.md` - Manual testing checklist
+- **Demo Restaurant:**
+  - 5 branches with realistic traffic patterns
+  - Overlapping item names with existing tenants (Fried Rice, Coffee, etc.)
+  - Owner + Viewer test accounts
+- **Next:** Run scripts, import data, perform validation testing
 
 ### Data Import Robustness (Jan 6, 2026) - COMPLETE
 - **Cancel Import Feature**: Manual cancel button + auto-cancel when user navigates away
