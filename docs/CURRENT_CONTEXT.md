@@ -1,19 +1,64 @@
 # Current Context
 
-> **Last updated:** 2025-01-05
+> **Last updated:** 2026-01-05
 > **Read this file at the start of every Claude Code session.**
 
 ---
 
-## Active Phase: Phase 8 - Alerts & Notifications (COMPLETE)
+## Active Phase: All Phases Complete
 
 **Branch:** `main`
-**Spec:** `docs/specs/PHASE_8_ALERTS.md`
-**Status:** Complete - Anomaly detection and alert system implemented
+**Status:** All 10 phases complete - Full restaurant analytics platform
 
 ---
 
 ## Completed Phases
+
+### Phase 9: Scheduled Reports - COMPLETE
+- Database: `reports` table with status workflow (pending/approved/sent)
+- Database: `report_recipient_email` column added to tenants
+- Database: `period_type` column for flexible time periods (migration 015)
+- Backend: Report generation module (`modules/reports.py`)
+  - KPIs aggregation (revenue, transactions, avg check, % changes)
+  - Top items by revenue
+  - Gainers/decliners (period-over-period comparison)
+  - Active alerts inclusion (weekly reports only)
+  - Flexible period calculation (week/month/quarter/year)
+- Backend: AI narrative service (`services/ai_narrative.py`)
+  - Mock mode for development (toggle MOCK_MODE)
+  - Two styles: full summary (2-3 paragraphs) or bullet points
+  - Claude API integration ready (add ANTHROPIC_API_KEY)
+- Backend: Email service (`services/email.py`)
+  - Resend integration (placeholder - add RESEND_API_KEY)
+  - HTML email template with KPIs, narrative, top items
+  - Mock mode for development
+- Backend: Reports API (`routes/reports.py`)
+  - `POST /api/reports/generate` - Generate single report (with period_type)
+  - `POST /api/reports/generate-all` - Generate for all tenants
+  - `GET /api/reports` - List with status filter
+  - `GET /api/reports/{id}` - Get single report
+  - `PUT /api/reports/{id}` - Update narrative
+  - `POST /api/reports/{id}/regenerate` - Regenerate AI narrative
+  - `POST /api/reports/{id}/approve` - Mark as approved
+  - `POST /api/reports/{id}/send` - Send email (subject reflects period type)
+  - `DELETE /api/reports/{id}` - Delete pending/approved reports
+- Frontend: Report Center (`/reports`) - Operator only
+  - Reports list with status and period type badges
+  - Generate single report with period dropdown (Week/Month/Quarter/Year)
+  - Generate all (weekly only)
+  - Status summary cards
+  - Delete pending reports
+- Frontend: Report Preview (`/reports/:id`)
+  - Full report preview with KPIs, narrative, top items
+  - Period type badge (Weekly/Monthly/Quarterly/Annual)
+  - Edit narrative text inline
+  - Regenerate AI with style toggle
+  - Approve workflow
+  - Send with email override option
+  - Alerts section hidden for non-weekly reports
+  - Movers display: "New/Trending" for >500%, "Discontinued" for -100%
+- CLI: `scripts/generate_weekly_reports.py` for cron scheduling
+- Schedule: Monday 8am Manila time (previous Mon-Sun period)
 
 ### Phase 8: Alerts & Anomaly Detection - COMPLETE
 - Database: `alerts`, `alert_settings` tables with RLS
@@ -151,18 +196,23 @@ backend/
 ├── middleware/auth.py           # JWT validation, tenant context
 ├── modules/
 │   ├── data_processing.py       # Legacy business logic (categories, service charge)
-│   └── anomaly.py               # Anomaly detection (revenue, items, quadrants)
+│   ├── anomaly.py               # Anomaly detection (revenue, items, quadrants)
+│   └── reports.py               # Report data generation
 ├── services/
-│   └── import_service.py        # CSV import orchestration
+│   ├── import_service.py        # CSV import orchestration
+│   ├── ai_narrative.py          # Claude API for report narratives
+│   └── email.py                 # Resend email service
 ├── routes/
 │   ├── auth.py                  # Auth endpoints
 │   ├── tenant.py                # Tenant CRUD (operator only)
 │   ├── data.py                  # Data import/transactions/menu-items
 │   ├── analytics.py             # Dashboard analytics endpoints
-│   └── alerts.py                # Alerts CRUD, scan trigger, settings
+│   ├── alerts.py                # Alerts CRUD, scan trigger, settings
+│   └── reports.py               # Reports CRUD, generate, send
 ├── scripts/
-│   └── import_storehub.py       # CLI import tool
-└── migrations/                  # SQL migrations (000-012)
+│   ├── import_storehub.py       # CLI import tool
+│   └── generate_weekly_reports.py  # Cron script for weekly reports
+└── migrations/                  # SQL migrations (000-015)
 
 frontend/src/
 ├── lib/
@@ -177,7 +227,8 @@ frontend/src/
 │   └── uiStore.ts               # UI state (sidebar)
 ├── hooks/
 │   ├── useAnalytics.ts          # React Query hooks for analytics API
-│   └── useAlerts.ts             # React Query hooks for alerts API
+│   ├── useAlerts.ts             # React Query hooks for alerts API
+│   └── useReports.ts            # React Query hooks for reports API
 ├── modules/
 │   ├── auth/                    # Login, ForgotPassword pages
 │   ├── dashboard/               # Executive dashboard
@@ -189,7 +240,8 @@ frontend/src/
 │   ├── recommendations/         # Rule-based suggestions, bundles
 │   ├── costs/                   # Cost input, margin calculations
 │   ├── data-management/         # Import, transactions view
-│   └── alerts/                  # Alerts list page
+│   ├── alerts/                  # Alerts list page
+│   └── reports/                 # Report Center, Report Preview (operator only)
 ├── components/
 │   ├── layout/                  # AppShell, Sidebar, Header, GlobalFilters
 │   ├── ui/                      # Spinner, DateRangePicker, MultiSelect, etc.
@@ -199,24 +251,38 @@ frontend/src/
 
 ---
 
-## Recent Changes (Jan 2025)
+## Recent Changes (Jan 2026)
 
-### Time Intelligence Enhancements
-- Added Day-of-Week analysis (`/api/analytics/day-of-week`)
-- Added Year-over-Year comparison (`/api/analytics/year-over-year`)
-- New components: `WeeklyRhythm`, `SameDayTrend`, `YearOverYearChart`
+### Data Import Robustness (Jan 6, 2026) - COMPLETE
+- **Cancel Import Feature**: Manual cancel button + auto-cancel when user navigates away
+  - Migration 027: Added `cancelled` status, `cancel_import_job()` RPC
+  - Backend checks job status every batch, stops if cancelled
+  - Frontend intercepts navigation during upload, shows confirm dialog
+- **Consecutive Failure Abort**: Import stops after 5 failed batches (prevents infinite loops)
+- **Duplicate Handling Fix**: Added `on_conflict` parameter to upsert for proper unique constraint handling
+- **Automatic Stale Job Cleanup**: No cron needed!
+  - Runs on server startup (cleans up jobs from previous crashes)
+  - Runs before each new upload (catches long-stale jobs)
+  - Manual script still available: `scripts/cleanup_stale_imports.py`
+- **Storage Made Optional**: Storage upload failures no longer block import processing
 
-### Recommendations Optimization
-- Created `get_analytics_bundles` RPC function for fast bundle analysis
-- Replaced 50+ paginated API calls with single RPC call
-- Added period selector (Month/Quarter/6Mo/Year) - bypasses global filters
-- Hidden global filters on Recommendations page
-- Added localStorage version migration for bundle thresholds
+### Phase 9: Scheduled Reports (Complete)
+- Full report generation with AI narrative (mock mode)
+- Operator approval workflow: Generate → Edit → Approve → Send
+- Flexible time periods: Last Week, Last Month, Last Quarter, Last Year
+- Period type badges (Weekly/Monthly/Quarterly/Annual)
+- Alerts excluded from historical (non-weekly) reports
+- Movers display: "New/Trending" for extreme gains, "Discontinued" for -100%
 
-### Performance Trends
-- Added 7-day moving average to daily revenue trends
-- Added 4-week moving average to weekly trends
-- Enabled chart legend for moving average visibility
+### Phase 8: Alerts & Anomaly Detection
+- Revenue drop detection, item spike/crash alerts, quadrant change alerts
+- Per-tenant configurable thresholds
+- AlertBanner on dashboard, full AlertsPage
+
+### Earlier (Dec 2025)
+- Time Intelligence: Day-of-Week analysis, Year-over-Year comparison
+- Recommendations: Bundle RPC optimization, period selector
+- Performance Trends: Moving averages (7-day, 4-week)
 
 ---
 

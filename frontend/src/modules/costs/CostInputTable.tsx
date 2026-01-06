@@ -93,7 +93,7 @@ export function CostInputTable({ onCostChange, costOverrides }: CostInputTablePr
         {/* Table */}
         <div className="max-h-96 overflow-y-auto border border-slate-200 rounded-lg">
           <table className="w-full">
-            <thead className="bg-slate-50 sticky top-0">
+            <thead className="bg-slate-50 sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
                   Item

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from middleware.auth import get_user_with_tenant, UserPayload
 from db.supabase import supabase
+from utils.cache import data_cache
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -112,32 +113,52 @@ async def list_alerts(
 
     Returns alerts sorted by created_at descending (newest first).
     Active alerts (not dismissed) appear before dismissed alerts.
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
 
-    # Build query
-    query = supabase.table("alerts").select("*", count="exact")
-    query = query.eq("tenant_id", effective_tenant_id)
+    def fetch_alerts():
+        # Build query
+        query = supabase.table("alerts").select("*", count="exact")
+        query = query.eq("tenant_id", effective_tenant_id)
 
-    if active_only:
-        query = query.is_("dismissed_at", "null")
-    if alert_type:
-        query = query.eq("type", alert_type)
-    if severity:
-        query = query.eq("severity", severity)
+        if active_only:
+            query = query.is_("dismissed_at", "null")
+        if alert_type:
+            query = query.eq("type", alert_type)
+        if severity:
+            query = query.eq("severity", severity)
 
-    # Sort by dismissed status then by date
-    query = query.order("dismissed_at", desc=False, nullsfirst=True)
-    query = query.order("created_at", desc=True)
-    query = query.range(offset, offset + limit - 1)
+        # Sort by dismissed status then by date
+        query = query.order("dismissed_at", desc=False, nullsfirst=True)
+        query = query.order("created_at", desc=True)
+        query = query.range(offset, offset + limit - 1)
 
-    result = query.execute()
+        result = query.execute()
 
-    # Get active count separately
-    active_result = supabase.table("alerts").select("id", count="exact") \
-        .eq("tenant_id", effective_tenant_id) \
-        .is_("dismissed_at", "null") \
-        .execute()
+        # Get active count separately
+        active_result = supabase.table("alerts").select("id", count="exact") \
+            .eq("tenant_id", effective_tenant_id) \
+            .is_("dismissed_at", "null") \
+            .execute()
+
+        return {
+            "alerts": result.data or [],
+            "total": result.count or 0,
+            "active_count": active_result.count or 0,
+        }
+
+    cached_data = data_cache.get_or_fetch(
+        prefix="alerts_list",
+        fetch_fn=fetch_alerts,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        active_only=active_only,
+        alert_type=alert_type,
+        severity=severity,
+        limit=limit,
+        offset=offset,
+    )
 
     alerts = [
         AlertResponse(
@@ -152,13 +173,13 @@ async def list_alerts(
             dismissed_at=a.get("dismissed_at"),
             dismissed_by=a.get("dismissed_by"),
         )
-        for a in (result.data or [])
+        for a in cached_data["alerts"]
     ]
 
     return AlertsListResponse(
         alerts=alerts,
-        total=result.count or 0,
-        active_count=active_result.count or 0,
+        total=cached_data["total"],
+        active_count=cached_data["active_count"],
     )
 
 
@@ -240,24 +261,32 @@ async def get_alert_settings(
     tenant_id: Optional[str] = None,
 ):
     """
-    Get alert settings for a tenant.
+    Get alert settings for a tenant. Cached for 2 minutes.
 
     Creates default settings if none exist.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
 
-    # Use RPC to get or create settings
-    result = supabase.rpc("get_or_create_alert_settings", {
-        "p_tenant_id": effective_tenant_id
-    }).execute()
+    def fetch_settings():
+        # Use RPC to get or create settings
+        result = supabase.rpc("get_or_create_alert_settings", {
+            "p_tenant_id": effective_tenant_id
+        }).execute()
+        return result.data
 
-    if not result.data:
+    # Cache for 2 minutes - settings change occasionally
+    settings = data_cache.get_or_fetch(
+        prefix="alert_settings",
+        fetch_fn=fetch_settings,
+        ttl="medium",
+        tenant_id=effective_tenant_id
+    )
+
+    if not settings:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get alert settings"
         )
-
-    settings = result.data
 
     return AlertSettingsResponse(
         tenant_id=settings["tenant_id"],
@@ -316,6 +345,9 @@ async def update_alert_settings(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update alert settings"
         )
+
+    # Invalidate cache so next read gets fresh data
+    data_cache.invalidate("alert_settings", tenant_id=effective_tenant_id)
 
     settings = result.data[0]
 

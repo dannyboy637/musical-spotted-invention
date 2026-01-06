@@ -320,8 +320,15 @@ def transform_storehub_row(
     timestamp = get_column_value(row, 'Time', 'Date', 'date', 'DATE', 'Timestamp', 'timestamp')
 
     # Convert timestamp to ISO string for JSON serialization
+    # StoreHub exports timestamps in Manila local time (UTC+8)
+    # We must tag naive datetimes with Manila TZ so Supabase stores correct UTC
     if timestamp is not None:
         if hasattr(timestamp, 'isoformat'):
+            # If naive datetime (no timezone), assume Manila local time
+            if hasattr(timestamp, 'tzinfo') and timestamp.tzinfo is None:
+                from datetime import timezone, timedelta
+                manila_tz = timezone(timedelta(hours=8))
+                timestamp = timestamp.replace(tzinfo=manila_tz)
             timestamp = timestamp.isoformat()
         elif not isinstance(timestamp, str):
             timestamp = str(timestamp)

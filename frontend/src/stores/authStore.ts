@@ -141,6 +141,13 @@ export const useAuthStore = create<AuthState>()(
           return
         }
 
+        // Create abort controller with timeout to prevent hanging UI
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => {
+          controller.abort()
+          console.warn('[AuthStore] Profile fetch timed out after 10 seconds')
+        }, 10000) // 10 second timeout
+
         try {
           const apiUrl = import.meta.env.VITE_API_URL
           console.log('[AuthStore] Fetching profile from:', `${apiUrl}/auth/me`)
@@ -151,8 +158,11 @@ export const useAuthStore = create<AuthState>()(
               headers: {
                 Authorization: `Bearer ${session.access_token}`,
               },
+              signal: controller.signal,
             }
           )
+
+          clearTimeout(timeoutId)
 
           if (!response.ok) {
             const errorText = await response.text()
@@ -164,7 +174,12 @@ export const useAuthStore = create<AuthState>()(
           console.log('[AuthStore] Profile loaded:', profile)
           set({ profile })
         } catch (error) {
-          console.error('[AuthStore] Failed to fetch profile:', error)
+          clearTimeout(timeoutId)
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.warn('[AuthStore] Profile fetch was aborted (timeout or navigation)')
+          } else {
+            console.error('[AuthStore] Failed to fetch profile:', error)
+          }
         }
       },
     }),

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from middleware.auth import get_user_with_tenant, UserPayload
 from db.supabase import supabase
+from utils.cache import data_cache
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -338,20 +339,30 @@ async def get_overview(
 
     Returns total revenue, transaction count, average ticket, etc.
     Uses database-level aggregation via RPC for fast performance.
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    # Use RPC function for fast database-level aggregation
-    result = supabase.rpc("get_analytics_overview", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
+    def fetch_overview():
+        return supabase.rpc("get_analytics_overview", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+        }).execute().data or {}
 
-    data = result.data or {}
+    data = data_cache.get_or_fetch(
+        prefix="analytics_overview",
+        fetch_fn=fetch_overview,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+    )
 
     # Calculate growth vs previous period if date range provided
     period_growth = None
@@ -660,20 +671,30 @@ async def get_dayparting(
     - Lunch (11:00-15:00)
     - Dinner (15:00-21:00)
     - Late Night (21:00-6:00)
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    # Use RPC function for fast database-level aggregation
-    result = supabase.rpc("get_analytics_dayparting", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
+    def fetch_dayparting():
+        return supabase.rpc("get_analytics_dayparting", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+        }).execute().data or {}
 
-    data = result.data or {}
+    data = data_cache.get_or_fetch(
+        prefix="analytics_dayparting",
+        fetch_fn=fetch_dayparting,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+    )
     dayparts_data = data.get("dayparts") or []
 
     dayparts = []
@@ -713,20 +734,30 @@ async def get_hourly_heatmap(
 
     Returns a 7x24 grid (day x hour) of revenue and transaction counts.
     Uses database-level aggregation via RPC for fast performance.
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    # Use RPC function for fast database-level aggregation
-    result = supabase.rpc("get_analytics_heatmap", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
+    def fetch_heatmap():
+        return supabase.rpc("get_analytics_heatmap", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+        }).execute().data or []
 
-    raw_data = result.data or []
+    raw_data = data_cache.get_or_fetch(
+        prefix="analytics_heatmap",
+        fetch_fn=fetch_heatmap,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+    )
 
     # Convert to response format - fill in missing day/hour combinations with zeros
     grid = {}
@@ -774,20 +805,30 @@ async def get_categories(
 
     Groups data by category and macro_category.
     By default excludes categories marked for exclusion (drinks, extras, etc.)
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, None)  # Don't filter by category here
 
-    # Use RPC function for fast database-level aggregation
-    result = supabase.rpc("get_analytics_categories", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_include_excluded": include_excluded,
-    }).execute()
+    def fetch_categories():
+        return supabase.rpc("get_analytics_categories", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_include_excluded": include_excluded,
+        }).execute().data or {}
 
-    data = result.data or {}
+    data = data_cache.get_or_fetch(
+        prefix="analytics_categories",
+        fetch_fn=fetch_categories,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        include_excluded=include_excluded,
+    )
     categories_data = data.get("categories") or []
 
     categories = [
@@ -832,21 +873,32 @@ async def get_bundles(
     Returns pairs sorted by frequency.
 
     Uses database-level aggregation via RPC for fast performance.
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, None)
 
-    # Use RPC function for fast database-level aggregation
-    result = supabase.rpc("get_analytics_bundles", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_min_frequency": min_frequency,
-        "p_limit": limit,
-    }).execute()
+    def fetch_bundles():
+        return supabase.rpc("get_analytics_bundles", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_min_frequency": min_frequency,
+            "p_limit": limit,
+        }).execute().data or {}
 
-    data = result.data or {}
+    data = data_cache.get_or_fetch(
+        prefix="analytics_bundles",
+        fetch_fn=fetch_bundles,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        min_frequency=min_frequency,
+        limit=limit,
+    )
     pairs_data = data.get("pairs") or []
     total_receipts = data.get("total_receipts") or 0
 
@@ -887,20 +939,30 @@ async def get_performance(
 
     Returns summary stats, recent trends, and branch breakdown.
     Uses database-level aggregation via RPC for fast performance.
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    # Use RPC function for fast database-level aggregation
-    result = supabase.rpc("get_analytics_performance", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
+    def fetch_performance():
+        return supabase.rpc("get_analytics_performance", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+        }).execute().data or {}
 
-    data = result.data or {}
+    data = data_cache.get_or_fetch(
+        prefix="analytics_performance",
+        fetch_fn=fetch_performance,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+    )
 
     return PerformanceResponse(
         summary=data.get("summary") or {"total_revenue": 0, "total_transactions": 0, "avg_ticket": 0},
@@ -925,20 +987,30 @@ async def get_performance_trends(
 
     Returns daily, weekly, and monthly aggregates plus growth metrics.
     Uses database-level aggregation via RPC for fast performance.
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    # Use RPC function for fast database-level aggregation
-    result = supabase.rpc("get_analytics_trends", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
+    def fetch_trends():
+        return supabase.rpc("get_analytics_trends", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+        }).execute().data or {}
 
-    data = result.data or {}
+    data = data_cache.get_or_fetch(
+        prefix="analytics_trends",
+        fetch_fn=fetch_trends,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+    )
 
     daily_list = data.get("daily") or []
     weekly_list = data.get("weekly") or []
@@ -981,19 +1053,28 @@ async def get_performance_branches(
 
     Returns metrics for each branch including top items and category breakdown.
     Uses database-level aggregation via RPC for fast performance.
+    Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, None, categories)  # Don't filter by branch here
 
-    # Use RPC function for fast database-level aggregation
-    result = supabase.rpc("get_analytics_branches", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_categories": filters.categories,
-    }).execute()
+    def fetch_branches():
+        return supabase.rpc("get_analytics_branches", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_categories": filters.categories,
+        }).execute().data or {}
 
-    data = result.data or {}
+    data = data_cache.get_or_fetch(
+        prefix="analytics_branches",
+        fetch_fn=fetch_branches,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        categories=str(filters.categories),
+    )
 
     return BranchesResponse(
         branches=data.get("branches") or [],

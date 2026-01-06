@@ -27,7 +27,7 @@ export function ChartContainer({
   children,
 }: ChartContainerProps) {
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm">
+    <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm overflow-hidden">
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
         {subtitle && (
@@ -74,7 +74,7 @@ export function ChartContainer({
           <p className="text-sm">{emptyMessage}</p>
         </div>
       ) : (
-        <div style={{ height }}>{children}</div>
+        <div style={{ height }} className="overflow-auto">{children}</div>
       )}
     </div>
   );

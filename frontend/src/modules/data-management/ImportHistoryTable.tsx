@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react'
-import { useImportJobs } from '../../hooks/useDataManagement'
+import { ChevronDown, ChevronRight, Clock, CheckCircle, XCircle, Loader2, Ban } from 'lucide-react'
+import { useImportJobs, useCancelImportJob } from '../../hooks/useDataManagement'
 import type { ImportJob } from '../../hooks/useDataManagement'
 import { Spinner } from '../../components/ui/Spinner'
 
@@ -9,6 +9,7 @@ const statusConfig = {
   processing: { icon: Loader2, color: 'bg-blue-100 text-blue-700', label: 'Processing' },
   completed: { icon: CheckCircle, color: 'bg-emerald-100 text-emerald-700', label: 'Completed' },
   failed: { icon: XCircle, color: 'bg-red-100 text-red-700', label: 'Failed' },
+  cancelled: { icon: Ban, color: 'bg-slate-100 text-slate-600', label: 'Cancelled' },
 }
 
 function StatusBadge({ status }: { status: ImportJob['status'] }) {
@@ -45,20 +46,31 @@ function formatDateRange(start: string | null, end: string | null) {
   return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 }
 
-function JobRow({ job }: { job: ImportJob }) {
+interface JobRowProps {
+  job: ImportJob
+  onCancel?: (jobId: string) => void
+  isCancelling?: boolean
+}
+
+function JobRow({ job, onCancel, isCancelling }: JobRowProps) {
   const [expanded, setExpanded] = useState(false)
 
+  const errorList = job.error_details?.errors || []
+  const duplicateCount = job.error_details?.duplicate_skipped || 0
   const hasErrors = job.error_message || (job.error_rows && job.error_rows > 0)
+  const hasDetails = hasErrors || duplicateCount > 0
+
+  const canCancel = (job.status === 'pending' || job.status === 'processing') && onCancel
 
   return (
     <>
       <tr
-        className={`hover:bg-slate-50 ${hasErrors ? 'cursor-pointer' : ''}`}
-        onClick={() => hasErrors && setExpanded(!expanded)}
+        className={`hover:bg-slate-50 ${hasDetails ? 'cursor-pointer' : ''}`}
+        onClick={() => hasDetails && setExpanded(!expanded)}
       >
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
-            {hasErrors && (
+            {hasDetails && (
               expanded ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />
             )}
             <span className="font-medium text-slate-800 text-sm">{job.file_name}</span>
@@ -73,6 +85,11 @@ function JobRow({ job }: { job: ImportJob }) {
               {job.inserted_rows?.toLocaleString() || 0}
               {job.total_rows && (
                 <span className="text-slate-400"> / {job.total_rows.toLocaleString()}</span>
+              )}
+              {duplicateCount > 0 && (
+                <span className="text-amber-600 ml-1" title="Duplicate rows skipped">
+                  ({duplicateCount.toLocaleString()} dup)
+                </span>
               )}
             </>
           ) : job.status === 'processing' ? (
@@ -92,28 +109,58 @@ function JobRow({ job }: { job: ImportJob }) {
         <td className="px-4 py-3 text-sm text-slate-500">
           {formatRelativeTime(job.created_at)}
         </td>
+        <td className="px-4 py-3 text-right">
+          {canCancel && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (confirm('Cancel this import? Any imported transactions will be deleted.')) {
+                  onCancel(job.id)
+                }
+              }}
+              disabled={isCancelling}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Cancel import"
+            >
+              <Ban size={12} />
+              {isCancelling ? 'Cancelling...' : 'Cancel'}
+            </button>
+          )}
+        </td>
       </tr>
-      {expanded && hasErrors && (
+      {expanded && hasDetails && (
         <tr>
-          <td colSpan={5} className="px-4 py-3 bg-red-50 border-t border-red-100">
+          <td colSpan={6} className={`px-4 py-3 border-t ${hasErrors ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
             <div className="text-sm">
-              <p className="font-medium text-red-800 mb-1">Error Details</p>
-              <p className="text-red-700">{job.error_message || 'Unknown error'}</p>
-              {job.error_rows && job.error_rows > 0 && (
-                <p className="text-red-600 mt-1">{job.error_rows} rows had errors</p>
-              )}
-              {job.error_details && job.error_details.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {job.error_details.slice(0, 5).map((err, i) => (
-                    <p key={i} className="text-xs text-red-600 font-mono">
-                      Row {(err as { row?: number }).row}: {(err as { error?: string }).error}
-                    </p>
-                  ))}
-                  {job.error_details.length > 5 && (
-                    <p className="text-xs text-red-500">
-                      ...and {job.error_details.length - 5} more errors
-                    </p>
+              {hasErrors && (
+                <>
+                  <p className="font-medium text-red-800 mb-1">Error Details</p>
+                  <p className="text-red-700">{job.error_message || 'Unknown error'}</p>
+                  {job.error_rows && job.error_rows > 0 && (
+                    <p className="text-red-600 mt-1">{job.error_rows} rows had errors</p>
                   )}
+                  {errorList.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {errorList.slice(0, 5).map((err, i) => (
+                        <p key={i} className="text-xs text-red-600 font-mono">
+                          Row {err.row}: {err.error}
+                        </p>
+                      ))}
+                      {errorList.length > 5 && (
+                        <p className="text-xs text-red-500">
+                          ...and {errorList.length - 5} more errors
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+              {duplicateCount > 0 && (
+                <div className={hasErrors ? 'mt-3 pt-3 border-t border-amber-200' : ''}>
+                  <p className="font-medium text-amber-800 mb-1">Duplicate Rows Skipped</p>
+                  <p className="text-amber-700">
+                    {duplicateCount.toLocaleString()} rows already existed in the database and were skipped.
+                  </p>
                 </div>
               )}
             </div>
@@ -126,6 +173,7 @@ function JobRow({ job }: { job: ImportJob }) {
 
 export function ImportHistoryTable() {
   const { data: jobs, isLoading, error, refetch } = useImportJobs(20, 0)
+  const cancelMutation = useCancelImportJob()
 
   // Check if any job is processing - if so, enable auto-refresh
   const hasProcessingJob = jobs?.some(j => j.status === 'pending' || j.status === 'processing')
@@ -133,6 +181,15 @@ export function ImportHistoryTable() {
   // Refetch every 3 seconds if there's a processing job
   if (hasProcessingJob) {
     setTimeout(() => refetch(), 3000)
+  }
+
+  const handleCancel = async (jobId: string) => {
+    try {
+      await cancelMutation.mutateAsync(jobId)
+    } catch (err) {
+      console.error('Failed to cancel job:', err)
+      alert('Failed to cancel import. Please try again.')
+    }
   }
 
   return (
@@ -182,11 +239,19 @@ export function ImportHistoryTable() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
                   Imported
                 </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase w-24">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {jobs.map((job) => (
-                <JobRow key={job.id} job={job} />
+                <JobRow
+                  key={job.id}
+                  job={job}
+                  onCancel={handleCancel}
+                  isCancelling={cancelMutation.isPending}
+                />
               ))}
             </tbody>
           </table>

@@ -13,8 +13,19 @@ from middleware.auth import (
 )
 from db.supabase import supabase
 from services.import_service import ImportService
+from utils.cache import data_cache
 
 router = APIRouter(prefix="/data", tags=["data"])
+
+
+def _cleanup_stale_jobs_silent():
+    """Clean up stale jobs before starting new upload. Silent - never fails."""
+    try:
+        result = supabase.rpc("cleanup_stale_import_jobs", {"p_timeout_hours": 1}).execute()
+        if result.data and result.data.get("jobs_cleaned", 0) > 0:
+            print(f"Pre-upload: Cleaned up {result.data['jobs_cleaned']} stale job(s)", flush=True)
+    except Exception:
+        pass  # Silent - don't block uploads if cleanup fails
 
 
 # ============================================
@@ -48,6 +59,20 @@ class RegenerateResponse(BaseModel):
     """Response for menu items regeneration."""
     status: str
     menu_items_updated: int
+
+
+class CancelJobResponse(BaseModel):
+    """Response for job cancellation."""
+    success: bool
+    job_id: str
+    transactions_deleted: int
+    message: str
+
+
+class CleanupStaleResponse(BaseModel):
+    """Response for stale job cleanup."""
+    jobs_cleaned: int
+    job_ids: list[str]
 
 
 # ============================================
@@ -115,48 +140,62 @@ async def upload_csv(
             detail="Only CSV files are accepted"
         )
 
-    # Read file content
-    content = await file.read()
-    file_size = len(content)
-
-    # Upload to Supabase Storage
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    storage_path = f"{tenant_id}/{timestamp}_{file.filename}"
-
     try:
-        supabase.storage.from_("csv-uploads").upload(
-            storage_path,
-            content,
-            {"content-type": "text/csv"}
+        # Clean up any stale jobs before starting new upload
+        _cleanup_stale_jobs_silent()
+
+        # Read file content
+        content = await file.read()
+        file_size = len(content)
+
+        # Generate storage path (for record keeping, even if we skip actual storage upload)
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        storage_path = f"{tenant_id}/{timestamp}_{file.filename}"
+
+        # Try to upload to Supabase Storage, but don't fail if storage is unavailable
+        try:
+            supabase.storage.from_("csv-uploads").upload(
+                storage_path,
+                content,
+                {"content-type": "text/csv"}
+            )
+        except Exception as e:
+            # Log but continue - storage is optional, processing is what matters
+            print(f"Warning: Storage upload failed (continuing anyway): {str(e)[:100]}", flush=True)
+            storage_path = f"local://{timestamp}_{file.filename}"  # Mark as not stored
+
+        # Create import service and job
+        import_service = ImportService(tenant_id, user.sub)
+        job_id = import_service.create_import_job(
+            file_name=file.filename,
+            file_path=storage_path,
+            file_size=file_size
         )
+
+        # Process in background
+        background_tasks.add_task(
+            process_import_task,
+            import_service,
+            content.decode('utf-8'),
+            file.filename
+        )
+
+        return UploadResponse(
+            job_id=job_id,
+            status="pending",
+            message="File uploaded successfully. Processing started.",
+            file_path=storage_path
+        )
+    except HTTPException:
+        raise
     except Exception as e:
+        import traceback
+        print(f"UPLOAD ERROR: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}"
+            detail=f"Upload failed: {str(e)}"
         )
-
-    # Create import service and job
-    import_service = ImportService(tenant_id, user.sub)
-    job_id = import_service.create_import_job(
-        file_name=file.filename,
-        file_path=storage_path,
-        file_size=file_size
-    )
-
-    # Process in background
-    background_tasks.add_task(
-        process_import_task,
-        import_service,
-        content.decode('utf-8'),
-        file.filename
-    )
-
-    return UploadResponse(
-        job_id=job_id,
-        status="pending",
-        message="File uploaded successfully. Processing started.",
-        file_path=storage_path
-    )
 
 
 # ============================================
@@ -207,6 +246,88 @@ async def get_import_job(
         )
 
     return result.data
+
+
+@router.post("/imports/{job_id}/cancel", response_model=CancelJobResponse)
+async def cancel_import_job(
+    job_id: str,
+    user: UserPayload = Depends(get_user_with_tenant),
+):
+    """
+    Cancel an in-progress import job and delete any partially imported transactions.
+
+    - Only pending or processing jobs can be cancelled
+    - Operators can cancel any job
+    - Owners can cancel their own tenant's jobs
+    - Viewers cannot cancel
+    """
+    if user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot cancel imports"
+        )
+
+    # Call RPC function to handle cancellation atomically
+    try:
+        result = supabase.rpc("cancel_import_job", {
+            "p_job_id": job_id,
+            "p_user_id": user.sub,
+        }).execute()
+        print(f"Cancel RPC result: {result.data}", flush=True)
+    except Exception as e:
+        print(f"Cancel RPC error: {e}", flush=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"RPC call failed: {str(e)}"
+        )
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RPC returned no data - function may not exist. Run migration 027."
+        )
+
+    response_data = result.data
+
+    if not response_data.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response_data.get("message", "Failed to cancel job")
+        )
+
+    # Invalidate caches if tenant_id is available
+    if user.tenant_id:
+        data_cache.invalidate_tenant(user.tenant_id)
+
+    return CancelJobResponse(
+        success=True,
+        job_id=job_id,
+        transactions_deleted=response_data.get("transactions_deleted", 0),
+        message=response_data.get("message", "Job cancelled"),
+    )
+
+
+@router.post("/imports/cleanup-stale", response_model=CleanupStaleResponse)
+async def cleanup_stale_jobs(
+    user: UserPayload = Depends(require_operator),
+    timeout_hours: int = 1,
+):
+    """
+    Mark stale processing jobs as failed.
+
+    Operator-only endpoint for manual cleanup.
+    Jobs stuck in 'processing' for longer than timeout_hours are marked as failed.
+    """
+    result = supabase.rpc("cleanup_stale_import_jobs", {
+        "p_timeout_hours": timeout_hours,
+    }).execute()
+
+    data = result.data if result.data else {"jobs_cleaned": 0, "job_ids": []}
+
+    return CleanupStaleResponse(
+        jobs_cleaned=data.get("jobs_cleaned", 0),
+        job_ids=[str(jid) for jid in data.get("job_ids", [])]
+    )
 
 
 # ============================================
@@ -364,40 +485,47 @@ async def list_branches(
     user: UserPayload = Depends(get_user_with_tenant),
     tenant_id: Optional[str] = None,
 ):
-    """Get unique branch/store names for user's tenant."""
+    """Get unique branch/store names for user's tenant. Cached for 5 minutes."""
     # Operators can specify tenant_id, others use their assigned tenant
     effective_tenant_id = tenant_id if user.role == "operator" and tenant_id else user.tenant_id
 
     if not effective_tenant_id:
         return {"branches": []}
 
-    # Use RPC to get distinct store names efficiently
-    try:
-        result = supabase.rpc("get_distinct_store_names", {
-            "p_tenant_id": effective_tenant_id
-        }).execute()
+    def fetch_branches():
+        # Use RPC to get distinct store names efficiently
+        try:
+            result = supabase.rpc("get_distinct_store_names", {
+                "p_tenant_id": effective_tenant_id
+            }).execute()
 
-        if result.data:
-            return {"branches": [row["store_name"] for row in result.data if row.get("store_name")]}
-    except Exception:
-        pass  # Fall back to manual approach if RPC doesn't exist
+            if result.data:
+                return [row["store_name"] for row in result.data if row.get("store_name")]
+        except Exception:
+            pass  # Fall back to manual approach if RPC doesn't exist
 
-    # Fallback: Query with high limit and dedupe
-    # Note: This is inefficient for large datasets but works as fallback
-    result = supabase.table("transactions") \
-        .select("store_name") \
-        .eq("tenant_id", effective_tenant_id) \
-        .not_.is_("store_name", "null") \
-        .limit(10000) \
-        .execute()
+        # Fallback: Query with high limit and dedupe
+        result = supabase.table("transactions") \
+            .select("store_name") \
+            .eq("tenant_id", effective_tenant_id) \
+            .not_.is_("store_name", "null") \
+            .limit(10000) \
+            .execute()
 
-    if not result.data:
-        return {"branches": []}
+        if not result.data:
+            return []
 
-    # Extract unique store names
-    branches = set(row.get("store_name") for row in result.data if row.get("store_name"))
+        return sorted(set(row.get("store_name") for row in result.data if row.get("store_name")))
 
-    return {"branches": sorted(branches)}
+    # Cache for 5 minutes - branches rarely change
+    branches = data_cache.get_or_fetch(
+        prefix="branches",
+        fetch_fn=fetch_branches,
+        ttl="long",
+        tenant_id=effective_tenant_id
+    )
+
+    return {"branches": branches}
 
 
 @router.get("/categories")
@@ -405,36 +533,45 @@ async def list_categories(
     user: UserPayload = Depends(get_user_with_tenant),
     tenant_id: Optional[str] = None,
 ):
-    """Get unique category names for user's tenant."""
+    """Get unique category names for user's tenant. Cached for 5 minutes."""
     # Operators can specify tenant_id, others use their assigned tenant
     effective_tenant_id = tenant_id if user.role == "operator" and tenant_id else user.tenant_id
 
     if not effective_tenant_id:
         return {"categories": []}
 
-    # Use RPC to get distinct categories efficiently
-    try:
-        result = supabase.rpc("get_distinct_categories", {
-            "p_tenant_id": effective_tenant_id
-        }).execute()
+    def fetch_categories():
+        # Use RPC to get distinct categories efficiently
+        try:
+            result = supabase.rpc("get_distinct_categories", {
+                "p_tenant_id": effective_tenant_id
+            }).execute()
 
-        if result.data:
-            return {"categories": [row["category"] for row in result.data if row.get("category")]}
-    except Exception:
-        pass  # Fall back to manual approach if RPC doesn't exist
+            if result.data:
+                return [row["category"] for row in result.data if row.get("category")]
+        except Exception:
+            pass  # Fall back to manual approach if RPC doesn't exist
 
-    # Fallback: Query with high limit and dedupe
-    result = supabase.table("transactions") \
-        .select("category") \
-        .eq("tenant_id", effective_tenant_id) \
-        .limit(10000) \
-        .execute()
+        # Fallback: Query with high limit and dedupe
+        result = supabase.table("transactions") \
+            .select("category") \
+            .eq("tenant_id", effective_tenant_id) \
+            .limit(10000) \
+            .execute()
 
-    if not result.data:
-        return {"categories": []}
+        if not result.data:
+            return []
 
-    # Extract unique categories
-    categories = sorted(set(row["category"] for row in result.data if row.get("category")))
+        return sorted(set(row["category"] for row in result.data if row.get("category")))
+
+    # Cache for 5 minutes - categories rarely change
+    categories = data_cache.get_or_fetch(
+        prefix="categories",
+        fetch_fn=fetch_categories,
+        ttl="long",
+        tenant_id=effective_tenant_id
+    )
+
     return {"categories": categories}
 
 
@@ -493,11 +630,7 @@ async def data_health_check(
     user: UserPayload = Depends(get_user_with_tenant),
 ):
     """
-    Check database health and migration status.
-
-    Returns information about:
-    - Whether RPC functions exist (migrations ran)
-    - Transaction/menu item counts for the tenant
+    Check database health and basic counts for the tenant.
     """
     if not user.tenant_id:
         raise HTTPException(
@@ -507,77 +640,19 @@ async def data_health_check(
 
     health = {
         "tenant_id": user.tenant_id,
-        "functions": {},
         "counts": {},
-        "issues": [],
+        "status": "ok",
     }
 
-    # Check if aggregate_menu_items function exists by trying to call it with invalid input
-    # This will fail with a clear error if function doesn't exist vs if it has other issues
     try:
-        # Use a dummy UUID that won't match any tenant
-        result = supabase.rpc("aggregate_menu_items", {
-            "p_tenant_id": "00000000-0000-0000-0000-000000000000"
-        }).execute()
-        health["functions"]["aggregate_menu_items"] = True
-    except Exception as e:
-        error_str = str(e).lower()
-        if "function" in error_str and "does not exist" in error_str:
-            health["functions"]["aggregate_menu_items"] = False
-            health["issues"].append("Migration 006 not run: aggregate_menu_items function missing")
-        else:
-            # Function exists but had another error (expected for dummy UUID)
-            health["functions"]["aggregate_menu_items"] = True
-
-    # Check RPC analytics functions
-    for func_name in ["get_analytics_overview", "get_analytics_trends"]:
-        try:
-            supabase.rpc(func_name, {
-                "p_tenant_id": "00000000-0000-0000-0000-000000000000",
-                "p_start_date": None,
-                "p_end_date": None,
-                "p_branches": None,
-                "p_categories": None,
-            }).execute()
-            health["functions"][func_name] = True
-        except Exception as e:
-            error_str = str(e).lower()
-            if "function" in error_str and "does not exist" in error_str:
-                health["functions"][func_name] = False
-                health["issues"].append(f"RPC function {func_name} missing")
-            else:
-                health["functions"][func_name] = True
-
-    # Get transaction count for tenant
-    try:
-        result = supabase.table("transactions") \
-            .select("id", count="exact") \
-            .eq("tenant_id", user.tenant_id) \
-            .limit(1) \
-            .execute()
-        health["counts"]["transactions"] = result.count or 0
-    except Exception as e:
-        health["counts"]["transactions"] = f"Error: {str(e)}"
-
-    # Get menu items count for tenant
-    try:
-        result = supabase.table("menu_items") \
-            .select("id", count="exact") \
-            .eq("tenant_id", user.tenant_id) \
-            .limit(1) \
-            .execute()
-        health["counts"]["menu_items"] = result.count or 0
-    except Exception as e:
-        health["counts"]["menu_items"] = f"Error: {str(e)}"
-
-    # Check for common issues
-    if health["counts"].get("transactions", 0) > 0 and health["counts"].get("menu_items", 0) == 0:
-        health["issues"].append(
-            "Transactions exist but menu_items is empty. "
-            "Run POST /data/menu-items/regenerate to populate."
-        )
-
-    if health["counts"].get("transactions", 0) == 0:
-        health["issues"].append("No transactions imported for this tenant.")
+        # Sequential queries (parallel ThreadPoolExecutor was adding overhead)
+        txn_result = supabase.table("transactions").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
+        menu_result = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
+        health["counts"]["transactions"] = txn_result.count or 0
+        health["counts"]["menu_items"] = menu_result.count or 0
+    except Exception:
+        health["counts"]["transactions"] = 0
+        health["counts"]["menu_items"] = 0
+        health["status"] = "degraded"
 
     return health

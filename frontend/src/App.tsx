@@ -15,6 +15,8 @@ import { RecommendationsPage } from './modules/recommendations'
 import { CostManagementPage } from './modules/costs'
 import { DataManagementPage } from './modules/data-management'
 import { AlertsPage } from './modules/alerts'
+import { ReportsPage, ReportPreviewPage } from './modules/reports'
+import { OperatorHub } from './modules/operator'
 import { ProtectedRoute } from './components/layout/ProtectedRoute'
 import { PublicRoute } from './components/layout/PublicRoute'
 import { AppShell } from './components/layout/AppShell'
@@ -55,6 +57,9 @@ function App() {
             <Route path="costs" element={<CostManagementPage />} />
             <Route path="data-management" element={<DataManagementPage />} />
             <Route path="alerts" element={<AlertsPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="reports/:id" element={<ReportPreviewPage />} />
+            <Route path="operator" element={<OperatorHub />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

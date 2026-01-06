@@ -9,17 +9,20 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 export interface ImportJob {
   id: string
   tenant_id: string
-  status: 'pending' | 'processing' | 'completed' | 'failed'
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
   file_name: string
   file_path: string
   file_size_bytes: number | null
   total_rows: number | null
   processed_rows: number | null
   inserted_rows: number | null
-  skipped_rows: number | null
+  skipped_rows: number | null  // Includes non-item rows + duplicates
   error_rows: number | null
   error_message: string | null
-  error_details: Record<string, unknown>[] | null
+  error_details: {
+    errors?: { row: number; error: string }[]
+    duplicate_skipped?: number  // Count of duplicate rows that were skipped
+  } | null
   date_range_start: string | null
   date_range_end: string | null
   started_at: string | null
@@ -92,8 +95,8 @@ export function useImportJob(
   })
 }
 
-// Hook for file upload mutation
-export function useUploadCSV() {
+// Hook for file upload mutation with progress tracking
+export function useUploadCSV(onProgress?: (progress: number) => void) {
   const { session } = useAuthStore()
   const queryClient = useQueryClient()
 
@@ -110,6 +113,12 @@ export function useUploadCSV() {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'multipart/form-data',
+        },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total && onProgress) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+            onProgress(percent)
+          }
         },
       })
       return response.data
@@ -140,5 +149,43 @@ export function useDataHealth() {
     },
     enabled: !!session?.access_token && !!activeTenant,
     staleTime: 1000 * 60, // 1 minute
+  })
+}
+
+// Response type for cancel job
+export interface CancelJobResponse {
+  success: boolean
+  job_id: string
+  transactions_deleted: number
+  message: string
+}
+
+// Hook for cancelling an import job
+export function useCancelImportJob() {
+  const { session } = useAuthStore()
+  const queryClient = useQueryClient()
+
+  return useMutation<CancelJobResponse, Error, string>({
+    mutationFn: async (jobId: string) => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const response = await axios.post(
+        `${API_URL}/data/imports/${jobId}/cancel`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      )
+      return response.data
+    },
+    onSuccess: (data) => {
+      // Invalidate queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['import-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['import-job', data.job_id] })
+      queryClient.invalidateQueries({ queryKey: ['data-health'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-overview'] })
+    },
   })
 }

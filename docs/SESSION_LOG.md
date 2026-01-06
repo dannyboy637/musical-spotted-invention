@@ -487,6 +487,140 @@ Run `backend/migrations/002_create_tenants_table.sql` in Supabase SQL Editor
 
 ---
 
+## 2026-01-05 - Phase 9: Scheduled Reports Complete
+
+**Duration:** ~3 hours
+**Branch:** main
+
+**What was done:**
+
+### Core Reports Feature (Previous Session)
+- Created database migrations (013-014):
+  - `reports` table with status workflow (pending/approved/sent)
+  - `report_recipient_email` column on tenants
+- Backend: Report generation module (`modules/reports.py`)
+- Backend: AI narrative service (`services/ai_narrative.py`) with mock mode
+- Backend: Email service (`services/email.py`) with mock mode
+- Backend: Reports API (`routes/reports.py`) - full CRUD + actions
+- Frontend: Report Center (`/reports`) - operator only
+- Frontend: Report Preview (`/reports/:id`) - full workflow
+- CLI: `scripts/generate_weekly_reports.py` for cron scheduling
+
+### Flexible Time Periods (This Session)
+- Added `period_type` column to reports table (migration 015)
+- Period calculation helpers: `get_period_bounds()`, `get_month_bounds()`, `get_quarter_bounds()`, `get_year_bounds()`
+- Period dropdown in generate modal: Last Week, Last Month, Last Quarter, Last Year
+- Period type badges: Weekly/Monthly/Quarterly/Annual (color-coded)
+- Alerts section hidden for non-weekly reports
+- Email subject reflects period type (Weekly Report, Monthly Report, etc.)
+
+### UX Improvements
+- Movers display: "New/Trending" for >500% gains (new menu items)
+- Movers display: "Discontinued" for -100% (removed items)
+- Discussed filtering extreme outliers - decided to leave as-is since weekly (primary use case) won't have these issues
+
+### Bug Fixes
+- Fixed `gross_amount` → `gross_revenue` column name in `_get_movers()`
+- Fixed `get_week_bounds` → `get_period_bounds('week')` in generate-all endpoint
+
+**Files created:**
+- `backend/migrations/015_add_report_period_type.sql`
+
+**Files modified:**
+- `backend/modules/reports.py` - Period helpers, skip alerts for non-weekly
+- `backend/routes/reports.py` - period_type support, email subject
+- `frontend/src/hooks/useReports.ts` - PeriodType, helper functions
+- `frontend/src/modules/reports/ReportsPage.tsx` - Period dropdown, badges
+- `frontend/src/modules/reports/ReportPreviewPage.tsx` - Period badge, hide alerts
+
+**What's next:**
+- All phases complete! Platform ready for production use
+- Future: Enable real AI (ANTHROPIC_API_KEY), email (RESEND_API_KEY)
+
+**Blockers/Issues:**
+- None
+
+**Phase 9 Status:** COMPLETE
+
+---
+
+## 2026-01-06 - Data Import Robustness & Graceful Cancellation
+
+**Duration:** ~2 hours
+**Branch:** main
+
+**What was done:**
+
+### Cancel Import Feature
+- Created migration `027_add_cancelled_status_and_cleanup.sql`:
+  - Added `cancelled` status to `import_status` enum
+  - `cancel_import_job(p_job_id, p_user_id)` RPC: Validates permissions, deletes transactions, updates status
+  - `cleanup_stale_import_jobs(p_timeout_hours)` RPC: Marks stuck jobs as failed after timeout
+- Backend: Added `POST /data/imports/{job_id}/cancel` endpoint
+- Backend: Added `is_job_cancelled()` method to ImportService
+- Backend: Check cancellation status every batch, stop if cancelled
+- Frontend: Added Cancel button to ImportHistoryTable
+- Frontend: Added `useCancelImportJob` hook
+- CLI: Created `scripts/cleanup_stale_imports.py` for hourly cron
+
+### Navigation Warning & Auto-Cancel
+- Frontend: Intercept link clicks during upload (capture phase event listener)
+- Frontend: Show confirm dialog when user tries to navigate away
+- Frontend: Auto-cancel job before allowing navigation
+- Note: Replaced `useBlocker` (requires data router) with click interceptor pattern
+
+### Consecutive Failure Abort
+- Backend: Track consecutive batch failures
+- Backend: Abort import after 5 consecutive failures
+- Backend: Mark job as "failed" with descriptive error message
+- Prevents infinite loop when persistent errors occur
+
+### Duplicate Handling Fix
+- Root cause: `upsert` with `ignore_duplicates=True` only checks primary key, not custom unique constraints
+- Fix: Added `on_conflict="tenant_id,receipt_number,item_name,source_row_number"` to all upsert calls
+- Now properly skips duplicate rows matching the `transactions_unique_row` constraint
+
+### Storage Made Optional
+- Issue: Supabase storage client requires trailing slash on URL
+- Issue: Large files hit 413 Payload Too Large error
+- Solution: Made storage upload non-blocking - logs warning but continues with import
+- Import processing happens from memory, storage is just for backup
+
+### Automatic Stale Job Cleanup
+- Added `lifespan` context manager to FastAPI app
+- Cleanup runs automatically on server startup
+- Cleanup runs before each new upload
+- No cron setup required - fully automatic
+
+### Bug Fixes
+- Fixed `non_item_rows` referenced before assignment in abort block
+- Fixed cancel RPC not returning data (user needed to run migration)
+- Added better error logging to upload endpoint for debugging
+
+**Files created:**
+- `backend/migrations/027_add_cancelled_status_and_cleanup.sql`
+- `backend/scripts/cleanup_stale_imports.py`
+
+**Files modified:**
+- `backend/main.py` - Added lifespan with automatic stale job cleanup on startup
+- `backend/routes/data.py` - Cancel endpoint, error logging, non-blocking storage, pre-upload cleanup
+- `backend/services/import_service.py` - Cancellation check, consecutive failures, on_conflict fix
+- `backend/db/supabase.py` - Trailing slash for storage URL
+- `frontend/src/hooks/useDataManagement.ts` - cancelled status, useCancelImportJob
+- `frontend/src/modules/data-management/ImportHistoryTable.tsx` - Cancel button, Actions column
+- `frontend/src/modules/data-management/CSVUploadForm.tsx` - Navigation interception, auto-cancel
+
+**What's next:**
+- All phases complete! Platform fully operational
+- Consider: Production deployment, real AI/email integration
+
+**Blockers/Issues:**
+- None - all issues resolved
+
+**Status:** COMPLETE
+
+---
+
 ## Template
 
 ```markdown

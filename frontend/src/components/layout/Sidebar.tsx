@@ -10,15 +10,18 @@ import {
   DollarSign,
   Database,
   Bell,
+  FileText,
   Settings,
   ChevronLeft,
   ChevronRight,
   X,
+  Gauge,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
 
 const navItems = [
+  { to: '/operator', icon: Gauge, label: 'Control Hub', operatorOnly: true },
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/menu-engineering', icon: UtensilsCrossed, label: 'Menu Engineering' },
   { to: '/time-intelligence', icon: Clock, label: 'Time Intelligence' },
@@ -29,6 +32,7 @@ const navItems = [
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/costs', icon: DollarSign, label: 'Costs', ownerOnly: true },
   { to: '/data-management', icon: Database, label: 'Data', ownerOnly: true },
+  { to: '/reports', icon: FileText, label: 'Reports', operatorOnly: true },
 ]
 
 interface SidebarProps {
@@ -40,6 +44,14 @@ export function Sidebar({ mobile = false }: SidebarProps) {
   const { profile } = useAuthStore()
 
   const isOwnerOrOperator = profile?.role === 'owner' || profile?.role === 'operator'
+  const isOperator = profile?.role === 'operator'
+
+  // Filter nav items based on role
+  const filterNavItems = (item: typeof navItems[0]) => {
+    if (item.operatorOnly && !isOperator) return false
+    if (item.ownerOnly && !isOwnerOrOperator) return false
+    return true
+  }
 
   // Mobile sidebar
   if (mobile) {
@@ -59,7 +71,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
         {/* Nav items */}
         <nav className="flex-1 py-4 px-2 space-y-1">
           {navItems
-            .filter((item) => !item.ownerOnly || isOwnerOrOperator)
+            .filter(filterNavItems)
             .map((item) => (
               <NavLink
                 key={item.to}
@@ -118,7 +130,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
       {/* Nav items */}
       <nav className="flex-1 py-4 px-2 space-y-1">
         {navItems
-          .filter((item) => !item.ownerOnly || isOwnerOrOperator)
+          .filter(filterNavItems)
           .map((item) => (
             <NavLink
               key={item.to}

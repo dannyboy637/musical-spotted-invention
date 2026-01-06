@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { dayLabels, hourLabels, hourLabelsCompact, formatNumber } from '../../lib/chartConfig';
+import { dayLabels, getHourLabel, getHourLabelCompact, formatNumber } from '../../lib/chartConfig';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface HeatmapDataItem {
   day: number;  // 0-6 (Mon-Sun)
@@ -43,6 +44,7 @@ export function Heatmap({
   formatValue = formatNumber,
   valueLabel = 'Value',
 }: HeatmapProps) {
+  const timeFormat = useSettingsStore((state) => state.timeFormat);
   const [tooltip, setTooltip] = useState<{
     visible: boolean;
     x: number;
@@ -96,19 +98,18 @@ export function Heatmap({
         </div>
 
         {/* Heatmap grid */}
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 grid grid-rows-7 gap-1">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 grid grid-rows-7 gap-1 min-h-0">
             {Array.from({ length: 7 }).map((_, dayIndex) => (
-              <div key={dayIndex} className="grid grid-cols-24 gap-0.5">
+              <div key={dayIndex} className="grid grid-cols-24 gap-0.5 min-h-0">
                 {Array.from({ length: 24 }).map((_, hourIndex) => {
                   const value = dataMap.get(`${dayIndex}-${hourIndex}`) ?? 0;
                   return (
                     <div
                       key={hourIndex}
-                      className="rounded-sm cursor-pointer transition-transform hover:scale-110 hover:z-10"
+                      className="rounded-sm cursor-pointer transition-transform hover:scale-110 hover:z-10 min-h-0"
                       style={{
                         backgroundColor: getCellColor(value),
-                        aspectRatio: '1',
                       }}
                       onMouseEnter={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
@@ -137,7 +138,7 @@ export function Heatmap({
                 className="text-xs text-slate-500"
                 style={{ width: `${100 / 6}%`, textAlign: 'center' }}
               >
-                {hourLabelsCompact[hour]}
+                {getHourLabelCompact(hour, timeFormat)}
               </div>
             ))}
           </div>
@@ -155,7 +156,7 @@ export function Heatmap({
           }}
         >
           <div className="font-medium text-slate-800">
-            {dayLabels[tooltip.day]} {hourLabels[tooltip.hour]}
+            {dayLabels[tooltip.day]} {getHourLabel(tooltip.hour, timeFormat)}
           </div>
           <div className="text-slate-600">
             {valueLabel}: {formatValue(tooltip.value)}

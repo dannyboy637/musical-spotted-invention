@@ -4,6 +4,7 @@ import {
   AVAILABLE_KPIS,
   DATE_RANGE_OPTIONS,
   NUMBER_FORMAT_OPTIONS,
+  TIME_FORMAT_OPTIONS,
   THEME_OPTIONS,
   TABLE_ROWS_OPTIONS,
 } from '../../stores/settingsStore'
@@ -21,11 +22,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     defaultDateRange,
     enabledKPIs,
     numberFormat,
+    timeFormat,
     theme,
     tableRowsPerPage,
     setDefaultDateRange,
     toggleKPI,
     setNumberFormat,
+    setTimeFormat,
     setTheme,
     setTableRowsPerPage,
     resetToDefaults,
@@ -145,6 +148,35 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       value={option.value}
                       checked={numberFormat === option.value}
                       onChange={() => setNumberFormat(option.value)}
+                      className="sr-only"
+                    />
+                    <span className="text-sm">
+                      {option.example} <span className="text-slate-400">({option.label})</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            {/* Time Format */}
+            <section>
+              <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Time Format</h3>
+              <div className="flex flex-wrap gap-2">
+                {TIME_FORMAT_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className={`inline-flex items-center px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${
+                      timeFormat === option.value
+                        ? 'bg-navy-50 border-navy-300 text-navy-700'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="timeFormat"
+                      value={option.value}
+                      checked={timeFormat === option.value}
+                      onChange={() => setTimeFormat(option.value)}
                       className="sr-only"
                     />
                     <span className="text-sm">

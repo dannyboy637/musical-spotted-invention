@@ -1,7 +1,7 @@
 // Chart configuration following DESIGN_SYSTEM.md
 // Navy + Gold theme with consistent styling
 
-import type { NumberFormat } from '../stores/settingsStore'
+import type { NumberFormat, TimeFormat } from '../stores/settingsStore'
 
 export const chartColors = [
   '#334e68', // Navy 700 - Primary
@@ -111,6 +111,29 @@ export const hourLabels = Array.from({ length: 24 }, (_, i) => {
 export const hourLabelsCompact = Array.from({ length: 24 }, (_, i) =>
   i === 0 ? '12a' : i < 12 ? `${i}a` : i === 12 ? '12p' : `${i - 12}p`
 );
+
+// Dynamic hour label functions based on user's time format preference
+export function getHourLabel(hour: number, format: TimeFormat): string {
+  if (format === '24hr') {
+    return `${hour.toString().padStart(2, '0')}:00`
+  }
+  // 12hr format
+  if (hour === 0) return '12:00 AM'
+  if (hour < 12) return `${hour}:00 AM`
+  if (hour === 12) return '12:00 PM'
+  return `${hour - 12}:00 PM`
+}
+
+export function getHourLabelCompact(hour: number, format: TimeFormat): string {
+  if (format === '24hr') {
+    return hour.toString().padStart(2, '0')
+  }
+  // 12hr format
+  if (hour === 0) return '12a'
+  if (hour < 12) return `${hour}a`
+  if (hour === 12) return '12p'
+  return `${hour - 12}p`
+}
 
 // Get color by index (cycles through palette)
 export function getChartColor(index: number): string {

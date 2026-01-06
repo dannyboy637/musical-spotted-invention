@@ -73,6 +73,16 @@ class ImportService:
 
         supabase.table("data_import_jobs").update(update_data).eq("id", self.job_id).execute()
 
+    def is_job_cancelled(self) -> bool:
+        """Check if the current job has been cancelled."""
+        if not self.job_id:
+            return False
+        try:
+            result = supabase.table("data_import_jobs").select("status").eq("id", self.job_id).single().execute()
+            return result.data and result.data.get("status") == "cancelled"
+        except Exception:
+            return False
+
     def process_csv(self, csv_content: str, file_name: str) -> Dict:
         """
         Process CSV content and insert transactions.
@@ -113,10 +123,13 @@ class ImportService:
         # Transform and insert in batches
         batch_size = 500  # Increased from 100 for faster imports
         inserted = 0
-        skipped = 0
+        duplicate_skipped = 0
         errors: List[Dict] = []
+        consecutive_failures = 0
+        max_consecutive_failures = 5  # Give up after 5 failed batches in a row
 
         total_items = len(items_df)
+        non_item_rows = total_rows - total_items  # Service charge, payment lines, etc.
         print(f"Processing {total_items} items...", flush=True)
 
         transactions = []
@@ -129,48 +142,130 @@ class ImportService:
                 trans["source_row_number"] = idx + 1
                 transactions.append(trans)
 
-                # Insert in batches
+                # Insert in batches using upsert with ignore_duplicates
+                # This silently skips rows that violate unique constraints
                 if len(transactions) >= batch_size:
-                    print(f"  Inserting batch of {len(transactions)} rows...", flush=True)
+                    batch_count = len(transactions)
+                    print(f"  Inserting batch of {batch_count} rows...", flush=True)
                     try:
-                        result = supabase.table("transactions").insert(transactions).execute()
-                        inserted += len(result.data)
-                        print(f"  Batch inserted successfully.", flush=True)
+                        # Use upsert with on_conflict to match the unique constraint columns
+                        result = supabase.table("transactions").upsert(
+                            transactions,
+                            on_conflict="tenant_id,receipt_number,item_name,source_row_number",
+                            ignore_duplicates=True
+                        ).execute()
+                        actual_inserted = len(result.data) if result.data else 0
+                        batch_skipped = batch_count - actual_inserted
+                        inserted += actual_inserted
+                        duplicate_skipped += batch_skipped
+                        consecutive_failures = 0  # Reset on success
+                        if batch_skipped > 0:
+                            print(f"  Batch: {actual_inserted} inserted, {batch_skipped} duplicates skipped.", flush=True)
+                        else:
+                            print(f"  Batch inserted successfully.", flush=True)
                     except Exception as e:
-                        print(f"  Batch failed: {str(e)[:100]}. Trying one by one...", flush=True)
+                        consecutive_failures += 1
+                        print(f"  Batch failed ({consecutive_failures}/{max_consecutive_failures}): {str(e)[:100]}. Trying one by one...", flush=True)
+
                         # Try inserting one by one to identify problematic rows
+                        batch_had_success = False
                         for t in transactions:
                             try:
-                                result = supabase.table("transactions").insert(t).execute()
-                                inserted += 1
+                                result = supabase.table("transactions").upsert(
+                                    t,
+                                    on_conflict="tenant_id,receipt_number,item_name,source_row_number",
+                                    ignore_duplicates=True
+                                ).execute()
+                                if result.data:
+                                    inserted += 1
+                                    batch_had_success = True
+                                else:
+                                    duplicate_skipped += 1
                             except Exception as row_error:
                                 errors.append({
                                     "row": t.get("source_row_number"),
                                     "error": str(row_error)
                                 })
+
+                        # Reset failure count if individual inserts worked
+                        if batch_had_success:
+                            consecutive_failures = 0
+
                     transactions = []
+
+                    # Check if too many consecutive failures - abort import
+                    if consecutive_failures >= max_consecutive_failures:
+                        error_msg = f"Import aborted after {max_consecutive_failures} consecutive batch failures"
+                        print(f"ERROR: {error_msg}", flush=True)
+                        self.update_job_status(
+                            status="failed",
+                            processed_rows=idx + 1,
+                            inserted_rows=inserted,
+                            error_message=error_msg,
+                        )
+                        return {
+                            "job_id": self.job_id,
+                            "total_rows": total_rows,
+                            "processed_rows": idx + 1,
+                            "inserted_rows": inserted,
+                            "duplicate_skipped": duplicate_skipped,
+                            "skipped_rows": non_item_rows,
+                            "error_count": len(errors),
+                            "alerts_created": 0,
+                            "aborted": True,
+                        }
 
                     # Update progress
                     progress = (idx + 1) / total_items * 100
-                    print(f"  Progress: {idx + 1}/{total_items} ({progress:.1f}%) - {inserted} inserted", flush=True)
+                    print(f"  Progress: {idx + 1}/{total_items} ({progress:.1f}%) - {inserted} inserted, {duplicate_skipped} skipped", flush=True)
                     self.update_job_status(
                         status="processing",
                         processed_rows=idx + 1,
                         inserted_rows=inserted
                     )
+
+                    # Check if job was cancelled by user
+                    if self.is_job_cancelled():
+                        print("Job was cancelled by user, stopping processing.", flush=True)
+                        return {
+                            "job_id": self.job_id,
+                            "cancelled": True,
+                            "total_rows": total_rows,
+                            "processed_rows": idx + 1,
+                            "inserted_rows": inserted,
+                            "duplicate_skipped": duplicate_skipped,
+                            "skipped_rows": non_item_rows,
+                            "error_count": len(errors),
+                            "alerts_created": 0,
+                        }
             except Exception as e:
                 errors.append({"row": idx + 1, "error": str(e)})
 
         # Insert remaining
         if transactions:
+            batch_count = len(transactions)
             try:
-                result = supabase.table("transactions").insert(transactions).execute()
-                inserted += len(result.data)
+                result = supabase.table("transactions").upsert(
+                    transactions,
+                    on_conflict="tenant_id,receipt_number,item_name,source_row_number",
+                    ignore_duplicates=True
+                ).execute()
+                actual_inserted = len(result.data) if result.data else 0
+                batch_skipped = batch_count - actual_inserted
+                inserted += actual_inserted
+                duplicate_skipped += batch_skipped
             except Exception as e:
                 for t in transactions:
                     try:
-                        result = supabase.table("transactions").insert(t).execute()
-                        inserted += 1
+                        result = supabase.table("transactions").upsert(
+                            t,
+                            on_conflict="tenant_id,receipt_number,item_name,source_row_number",
+                            ignore_duplicates=True
+                        ).execute()
+                        if result.data:
+                            inserted += 1
+                        else:
+                            duplicate_skipped += 1
                     except Exception as row_error:
                         errors.append({
                             "row": t.get("source_row_number"),
@@ -179,32 +274,39 @@ class ImportService:
 
         # Final update
         final_status = "completed"
+
+        print(f"Import complete: {inserted} inserted, {duplicate_skipped} duplicates skipped, {non_item_rows} non-item rows, {len(errors)} errors", flush=True)
+
         self.update_job_status(
             status=final_status,
             processed_rows=len(items_df),
             inserted_rows=inserted,
-            skipped_rows=total_rows - len(items_df),
+            skipped_rows=non_item_rows + duplicate_skipped,  # Combined for UI simplicity
             error_rows=len(errors),
-            error_details={"errors": errors[:100]} if errors else None,
+            error_details={"errors": errors[:100], "duplicate_skipped": duplicate_skipped} if errors or duplicate_skipped > 0 else None,
             date_range_start=date_range_start.date().isoformat() if date_range_start and pd.notna(date_range_start) else None,
             date_range_end=date_range_end.date().isoformat() if date_range_end and pd.notna(date_range_end) else None,
         )
 
-        # Run anomaly detection after successful import
+        # Run anomaly detection after successful import (only if we inserted new data)
         alerts_created = 0
-        try:
-            print("Running anomaly detection scan...", flush=True)
-            alerts_created = run_anomaly_scan(self.tenant_id)
-            print(f"Anomaly scan complete: {alerts_created} alerts created", flush=True)
-        except Exception as e:
-            print(f"Warning: Anomaly scan failed: {e}", flush=True)
+        if inserted > 0:
+            try:
+                print("Running anomaly detection scan...", flush=True)
+                alerts_created = run_anomaly_scan(self.tenant_id)
+                print(f"Anomaly scan complete: {alerts_created} alerts created", flush=True)
+            except Exception as e:
+                print(f"Warning: Anomaly scan failed: {e}", flush=True)
+        else:
+            print("No new rows inserted, skipping anomaly detection.", flush=True)
 
         return {
             "job_id": self.job_id,
             "total_rows": total_rows,
             "processed_rows": len(items_df),
             "inserted_rows": inserted,
-            "skipped_rows": total_rows - len(items_df),
+            "duplicate_skipped": duplicate_skipped,
+            "skipped_rows": non_item_rows,
             "error_count": len(errors),
             "alerts_created": alerts_created,
         }
