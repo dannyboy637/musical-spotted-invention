@@ -20,8 +20,26 @@ export const quadrantColors = {
   Dog: '#64748b',       // Slate - low profit, low popularity
 } as const;
 
+// Responsive margin helper - smaller margins on mobile
+export function getResponsiveMargin(windowWidth?: number) {
+  const width = windowWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1024)
+
+  if (width < 640) {
+    // Mobile: compact margins
+    return { top: 10, right: 10, bottom: 10, left: 10 }
+  }
+  if (width < 1024) {
+    // Tablet: medium margins
+    return { top: 15, right: 15, bottom: 15, left: 15 }
+  }
+  // Desktop: standard margins
+  return { top: 20, right: 20, bottom: 20, left: 20 }
+}
+
 export const chartConfig = {
   margin: { top: 20, right: 20, bottom: 20, left: 20 },
+  marginMobile: { top: 10, right: 10, bottom: 10, left: 10 },
+  marginTablet: { top: 15, right: 15, bottom: 15, left: 15 },
   grid: {
     stroke: '#e2e8f0',
     strokeDasharray: '3 3',

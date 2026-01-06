@@ -413,10 +413,40 @@ ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gross_sales DECIMAL(12,2);
 
 ---
 
+## 12. README Screenshots (Deferred from Phase 11)
+
+### Overview
+Add real screenshots to README using mock/demo data (not confidential client data).
+
+### Required Screenshots
+Save to `docs/screenshots/`:
+
+| File | Page | Description |
+|------|------|-------------|
+| `dashboard.png` | Dashboard | KPIs, revenue chart, top/bottom items |
+| `menu-engineering.png` | Menu Engineering | BCG scatter plot with quadrants |
+| `time-intelligence.png` | Time Intelligence | Hourly heatmap |
+| `reports.png` | Reports | Report list and preview |
+
+### How To
+1. Create mock tenant with demo data (or use seeded test data)
+2. Set viewport to 1440x900 for consistency
+3. Use browser's full-page screenshot or extension
+4. Compress images to <500KB each (TinyPNG or ImageOptim)
+5. Update README.md if needed
+
+### Notes
+- Use mock data only - no confidential client data
+- Consider adding dark mode variants later
+- Could automate with Playwright if needed for CI
+
+---
+
 ## Priority Order
 
 | Priority | Feature | Complexity | Impact |
 |----------|---------|------------|--------|
+| **Pre-0** | **README Screenshots** | **Low** | **Medium** |
 | **0** | **Revenue Reconciliation & Daily Breakdown** | **Medium** | **Critical** |
 | 1 | Full Preferences System | Medium | High |
 | 2 | Saved Filter Presets | Low | High |

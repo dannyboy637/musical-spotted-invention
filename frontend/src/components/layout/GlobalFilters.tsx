@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { X } from 'lucide-react'
+import { X, ChevronDown, ChevronUp, Filter } from 'lucide-react'
 import { DateRangePicker } from '../ui/DateRangePicker'
 import { MultiSelect } from '../ui/MultiSelect'
 import {
@@ -11,6 +11,7 @@ import {
 
 export function GlobalFilters() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [isExpanded, setIsExpanded] = useState(false)
   const {
     dateRange,
     branches,
@@ -24,6 +25,7 @@ export function GlobalFilters() {
   } = useFilterStore()
 
   const hasActiveFilters = dateRange !== null || branches.length > 0 || categories.length > 0
+  const activeFilterCount = (dateRange ? 1 : 0) + (branches.length > 0 ? 1 : 0) + (categories.length > 0 ? 1 : 0)
 
   // Sync from URL on mount
   useEffect(() => {
@@ -54,46 +56,73 @@ export function GlobalFilters() {
   }, [dateRange, branches, categories])
 
   return (
-    <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 lg:px-6 py-3">
-      <div className="flex flex-wrap items-end gap-4">
-        {/* Date Range */}
-        <div className="w-full sm:w-auto min-w-[280px]">
-          <DateRangePicker value={dateRange} onChange={setDateRange} />
-        </div>
+    <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+      {/* Mobile: Collapsible header */}
+      <div className="sm:hidden px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center justify-between text-left"
+        >
+          <div className="flex items-center gap-2">
+            <Filter size={18} className="text-slate-500" />
+            <span className="font-medium text-slate-700">Filters</span>
+            {activeFilterCount > 0 && (
+              <span className="px-2 py-0.5 text-xs font-medium bg-navy-100 text-navy-700 rounded-full">
+                {activeFilterCount}
+              </span>
+            )}
+          </div>
+          {isExpanded ? (
+            <ChevronUp size={18} className="text-slate-400" />
+          ) : (
+            <ChevronDown size={18} className="text-slate-400" />
+          )}
+        </button>
+      </div>
 
-        {/* Branches */}
-        <div className="w-full sm:w-auto min-w-[180px]">
-          <MultiSelect
-            label="Branches"
-            options={availableBranches}
-            selected={branches}
-            onChange={setBranches}
-            placeholder="All branches"
-          />
-        </div>
+      {/* Filter controls - always visible on desktop, collapsible on mobile */}
+      <div className={`px-4 lg:px-6 py-3 sm:block ${isExpanded ? 'block border-t border-slate-100' : 'hidden'}`}>
+        <div className="flex flex-wrap items-end gap-4">
+          {/* Date Range */}
+          <div className="w-full sm:w-auto min-w-[280px]">
+            <DateRangePicker value={dateRange} onChange={setDateRange} />
+          </div>
 
-        {/* Categories */}
-        <div className="w-full sm:w-auto min-w-[180px]">
-          <MultiSelect
-            label="Categories"
-            options={availableCategories}
-            selected={categories}
-            onChange={setCategories}
-            placeholder="All categories"
-          />
-        </div>
+          {/* Branches */}
+          <div className="w-full sm:w-auto min-w-[180px]">
+            <MultiSelect
+              label="Branches"
+              options={availableBranches}
+              selected={branches}
+              onChange={setBranches}
+              placeholder="All branches"
+            />
+          </div>
 
-        {/* Clear All Filters */}
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors self-end"
-          >
-            <X size={14} />
-            <span>Clear filters</span>
-          </button>
-        )}
+          {/* Categories */}
+          <div className="w-full sm:w-auto min-w-[180px]">
+            <MultiSelect
+              label="Categories"
+              options={availableCategories}
+              selected={categories}
+              onChange={setCategories}
+              placeholder="All categories"
+            />
+          </div>
+
+          {/* Clear All Filters */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors self-end"
+            >
+              <X size={14} />
+              <span>Clear filters</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

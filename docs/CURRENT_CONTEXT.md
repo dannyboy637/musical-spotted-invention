@@ -1,18 +1,54 @@
 # Current Context
 
-> **Last updated:** 2026-01-05
+> **Last updated:** 2026-01-06
 > **Read this file at the start of every Claude Code session.**
 
 ---
 
-## Active Phase: All Phases Complete
+## Active Phase: Phase 11 Complete
 
 **Branch:** `main`
-**Status:** All 10 phases complete - Full restaurant analytics platform
+**Status:** Phase 11 (Polish & Hardening) complete - Production-ready quality
 
 ---
 
 ## Completed Phases
+
+### Phase 11: Polish & Hardening - COMPLETE
+- **Error Handling:**
+  - ErrorBoundary component with role-based error display (operators see technical details)
+  - 404 NotFoundPage with simple message and home link
+  - Toast notification system (react-hot-toast) for API errors
+  - Global error handler in React Query with 401 redirect to login
+  - Global exception handler in FastAPI for consistent error responses
+- **Loading States:**
+  - TableSkeleton, ListSkeleton, PageSkeleton components
+  - Lazy loading all routes with Suspense fallback
+  - ChartSkeleton (5 variants: line, bar, donut, heatmap, scatter)
+- **Empty States:**
+  - EmptyState component with icon, title, description, CTA
+  - Enhanced ChartContainer with emptyDescription, emptyActionLabel, emptyActionHref
+  - Context-aware empty messages on dashboard charts
+- **Mobile Optimization:**
+  - Collapsible GlobalFilters on mobile with active filter count badge
+  - Responsive chart margins helper function
+  - DataTable already has horizontal scroll
+  - Sidebar hamburger menu already implemented
+- **Performance:**
+  - Lazy loading all 15 page routes
+  - Vite code splitting with manual vendor chunks
+  - Bundle split: React (48KB), Charts (396KB), Supabase (169KB), etc.
+  - Initial load significantly reduced
+- **Security:**
+  - Rate limiting: 100 req/min per user (slowapi)
+  - GZip compression for responses > 1KB
+  - Consistent error response format with error codes
+  - 429 response with Retry-After header
+- **Documentation:**
+  - README.md updated for potential clients/demo with feature highlights
+  - docs/API.md - Complete API reference with curl examples
+  - docs/DEPLOYMENT.md - Production deployment guide
+  - docs/screenshots/ directory (screenshots to be added manually)
 
 ### Phase 9: Scheduled Reports - COMPLETE
 - Database: `reports` table with status workflow (pending/approved/sent)

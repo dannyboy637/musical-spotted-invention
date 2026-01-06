@@ -8,8 +8,12 @@ from dotenv import load_dotenv
 # Load environment variables before other imports
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from datetime import datetime
 from routes.auth import router as auth_router
 from routes.tenant import router as tenant_router
@@ -19,6 +23,7 @@ from routes.alerts import router as alerts_router
 from routes.reports import router as reports_router
 from routes.operator import router as operator_router
 from middleware.metrics import MetricsMiddleware
+from middleware.rate_limit import limiter
 from db.supabase import supabase
 
 
@@ -55,13 +60,49 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add rate limiter to app state
+app.state.limiter = limiter
+
+# Custom rate limit exceeded handler with JSON response
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": "Too many requests. Please slow down.",
+            "detail": str(exc.detail),
+            "retry_after": getattr(exc, "retry_after", 60),
+        },
+        headers={"Retry-After": str(getattr(exc, "retry_after", 60))},
+    )
+
+# Global exception handler for unhandled errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Log the error (MetricsMiddleware will catch this too)
+    print(f"Unhandled error: {type(exc).__name__}: {exc}", flush=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_server_error",
+            "message": "An unexpected error occurred. Please try again later.",
+        },
+    )
+
 # Get frontend URL from environment or default to localhost
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 # Middleware order matters! Last added = runs first (outermost)
-# 1. MetricsMiddleware (inner) - only sees non-OPTIONS requests
-# 2. CORSMiddleware (outer) - handles OPTIONS preflight immediately
+# Order from outer to inner: GZip -> CORS -> Metrics -> Rate Limit -> Routes
+
+# GZip compression for responses > 1000 bytes
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# MetricsMiddleware - only sees non-OPTIONS requests
 app.add_middleware(MetricsMiddleware)
+
+# CORSMiddleware - handles OPTIONS preflight immediately
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

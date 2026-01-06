@@ -1,7 +1,9 @@
+import { Building2, UserCog } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { AlertBanner } from '../../components/alerts/AlertBanner'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { KPISection } from './KPISection'
 import { RevenueTrendChart } from './RevenueTrendChart'
 import { TopItemsTable } from './TopItemsTable'
@@ -18,12 +20,20 @@ export function DashboardPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Dashboard" />
-        <div className="bg-white rounded-lg border border-slate-200 p-8 text-center">
-          <p className="text-slate-600">
-            {profile?.role === 'operator'
-              ? 'Select a tenant from the header to view their data.'
-              : 'No tenant assigned. Contact your administrator.'}
-          </p>
+        <div className="bg-white rounded-lg border border-slate-200">
+          {profile?.role === 'operator' ? (
+            <EmptyState
+              icon={Building2}
+              title="Select a Restaurant"
+              description="Choose a tenant from the header dropdown to view their analytics dashboard."
+            />
+          ) : (
+            <EmptyState
+              icon={UserCog}
+              title="No Restaurant Assigned"
+              description="Contact your administrator to be assigned to a restaurant."
+            />
+          )}
         </div>
       </div>
     )

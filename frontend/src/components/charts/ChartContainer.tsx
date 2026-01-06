@@ -1,4 +1,4 @@
-import { BarChart3, AlertCircle, RefreshCw } from 'lucide-react';
+import { BarChart3, AlertCircle, RefreshCw, type LucideIcon } from 'lucide-react';
 import { ChartSkeleton } from './ChartSkeleton';
 
 interface ChartContainerProps {
@@ -7,6 +7,11 @@ interface ChartContainerProps {
   loading?: boolean;
   empty?: boolean;
   emptyMessage?: string;
+  emptyDescription?: string;
+  emptyIcon?: LucideIcon;
+  emptyActionLabel?: string;
+  onEmptyAction?: () => void;
+  emptyActionHref?: string;
   error?: Error | null;
   onRetry?: () => void;
   skeletonType?: 'line' | 'bar' | 'donut' | 'heatmap' | 'scatter';
@@ -20,12 +25,22 @@ export function ChartContainer({
   loading = false,
   empty = false,
   emptyMessage = 'No data available',
+  emptyDescription,
+  emptyIcon: EmptyIcon = BarChart3,
+  emptyActionLabel,
+  onEmptyAction,
+  emptyActionHref,
   error = null,
   onRetry,
   skeletonType = 'bar',
   height = 300,
   children,
 }: ChartContainerProps) {
+  const ActionWrapper = emptyActionHref ? 'a' : 'button'
+  const actionProps = emptyActionHref
+    ? { href: emptyActionHref }
+    : { onClick: onEmptyAction, type: 'button' as const }
+
   return (
     <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm overflow-hidden">
       <div className="mb-4">
@@ -67,11 +82,24 @@ export function ChartContainer({
         </div>
       ) : empty ? (
         <div
-          className="flex flex-col items-center justify-center text-slate-400"
+          className="flex flex-col items-center justify-center text-center px-4"
           style={{ height }}
         >
-          <BarChart3 size={48} strokeWidth={1.5} className="mb-3 opacity-50" />
-          <p className="text-sm">{emptyMessage}</p>
+          <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3">
+            <EmptyIcon size={24} className="text-slate-400" />
+          </div>
+          <p className="text-sm font-medium text-slate-600 mb-1">{emptyMessage}</p>
+          {emptyDescription && (
+            <p className="text-xs text-slate-400 max-w-xs mb-4">{emptyDescription}</p>
+          )}
+          {emptyActionLabel && (onEmptyAction || emptyActionHref) && (
+            <ActionWrapper
+              {...actionProps}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-navy-700 text-white rounded-md hover:bg-navy-800 transition-colors"
+            >
+              {emptyActionLabel}
+            </ActionWrapper>
+          )}
         </div>
       ) : (
         <div style={{ height }} className="overflow-auto">{children}</div>

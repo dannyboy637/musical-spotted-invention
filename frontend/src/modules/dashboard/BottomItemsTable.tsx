@@ -48,6 +48,7 @@ export function BottomItemsTable() {
       loading={isLoading}
       empty={bottomItems.length === 0}
       emptyMessage="No underperforming items"
+      emptyDescription="Great news! No items are currently in the Dog quadrant."
       skeletonType="bar"
     >
       <div className="px-1">

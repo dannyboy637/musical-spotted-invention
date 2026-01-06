@@ -46,7 +46,10 @@ export function TopItemsTable() {
       subtitle="Best selling items by revenue"
       loading={isLoading}
       empty={topItems.length === 0}
-      emptyMessage="No items data available"
+      emptyMessage="No top performers found"
+      emptyDescription="Import transaction data to see your best-selling items."
+      emptyActionLabel="Import Data"
+      emptyActionHref="/data-management"
       skeletonType="bar"
     >
       <div className="px-1">

@@ -66,7 +66,10 @@ export function RevenueTrendChart() {
       empty={chartData.length === 0}
       error={error as Error | null}
       onRetry={() => refetch()}
-      emptyMessage="No revenue data for selected filters"
+      emptyMessage="No revenue data available"
+      emptyDescription="Try adjusting your date range or filters, or import transaction data to see trends."
+      emptyActionLabel="Import Data"
+      emptyActionHref="/data-management"
       skeletonType="line"
       height={420}
     >
