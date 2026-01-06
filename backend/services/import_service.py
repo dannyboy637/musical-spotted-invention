@@ -300,6 +300,19 @@ class ImportService:
         else:
             print("No new rows inserted, skipping anomaly detection.", flush=True)
 
+        # Refresh all summary tables for fast dashboard queries
+        summary_refresh_result = None
+        if inserted > 0:
+            try:
+                print("Refreshing summary tables...", flush=True)
+                summary_refresh_result = self.refresh_all_summaries()
+                duration_ms = summary_refresh_result.get("duration_ms", 0) if summary_refresh_result else 0
+                print(f"Summary tables refreshed in {duration_ms:.0f}ms", flush=True)
+            except Exception as e:
+                print(f"Warning: Summary table refresh failed: {e}", flush=True)
+        else:
+            print("No new rows inserted, skipping summary refresh.", flush=True)
+
         return {
             "job_id": self.job_id,
             "total_rows": total_rows,
@@ -330,3 +343,61 @@ class ImportService:
             # Log error but don't fail the import
             print(f"Warning: Failed to regenerate menu items: {e}")
             return 0
+
+    def refresh_all_summaries(self) -> Optional[Dict]:
+        """
+        Refresh all summary tables (hourly_summaries, item_pairs, branch_summaries).
+
+        This calls the database function to rebuild pre-aggregated data.
+        Called after import to ensure dashboards show up-to-date data.
+
+        Returns dict with refresh stats, or None if failed.
+        """
+        try:
+            result = supabase.rpc("refresh_all_summaries", {
+                "p_tenant_id": self.tenant_id
+            }).execute()
+
+            if result.data:
+                return result.data
+            return None
+        except Exception as e:
+            print(f"Warning: Failed to refresh summary tables: {e}")
+            return None
+
+    def refresh_hourly_summaries(self) -> Optional[Dict]:
+        """Refresh only hourly_summaries table."""
+        try:
+            result = supabase.rpc("refresh_hourly_summaries", {
+                "p_tenant_id": self.tenant_id
+            }).execute()
+            return result.data if result.data else None
+        except Exception as e:
+            print(f"Warning: Failed to refresh hourly_summaries: {e}")
+            return None
+
+    def refresh_item_pairs(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Optional[Dict]:
+        """Refresh only item_pairs table."""
+        try:
+            params = {"p_tenant_id": self.tenant_id}
+            if start_date:
+                params["p_start_date"] = start_date
+            if end_date:
+                params["p_end_date"] = end_date
+
+            result = supabase.rpc("refresh_item_pairs", params).execute()
+            return result.data if result.data else None
+        except Exception as e:
+            print(f"Warning: Failed to refresh item_pairs: {e}")
+            return None
+
+    def refresh_branch_summaries(self) -> Optional[Dict]:
+        """Refresh only branch_summaries table."""
+        try:
+            result = supabase.rpc("refresh_branch_summaries", {
+                "p_tenant_id": self.tenant_id
+            }).execute()
+            return result.data if result.data else None
+        except Exception as e:
+            print(f"Warning: Failed to refresh branch_summaries: {e}")
+            return None

@@ -331,6 +331,120 @@ async def cleanup_stale_jobs(
 
 
 # ============================================
+# SUMMARY TABLE ENDPOINTS
+# ============================================
+
+class SummaryRefreshResponse(BaseModel):
+    """Response for summary table refresh."""
+    success: bool
+    tenant_id: str
+    duration_ms: float
+    hourly_summaries: Optional[dict] = None
+    item_pairs: Optional[dict] = None
+    branch_summaries: Optional[dict] = None
+
+
+@router.post("/summaries/refresh", response_model=SummaryRefreshResponse)
+async def refresh_summaries(
+    user: UserPayload = Depends(require_operator),
+    tenant_id: Optional[str] = None,
+):
+    """
+    Manually refresh summary tables for a tenant.
+
+    Operator-only endpoint for manual refresh when needed.
+    If tenant_id is not provided, uses the operator's active tenant.
+    """
+    target_tenant = tenant_id or user.tenant_id
+
+    if not target_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tenant specified. Provide tenant_id or set an active tenant."
+        )
+
+    try:
+        result = supabase.rpc("refresh_all_summaries", {
+            "p_tenant_id": target_tenant,
+        }).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Refresh function returned no data. Run migrations 031-034."
+            )
+
+        data = result.data
+
+        # Invalidate caches for this tenant
+        data_cache.invalidate_tenant(target_tenant)
+
+        return SummaryRefreshResponse(
+            success=data.get("success", False),
+            tenant_id=target_tenant,
+            duration_ms=data.get("duration_ms", 0),
+            hourly_summaries=data.get("hourly_summaries"),
+            item_pairs=data.get("item_pairs"),
+            branch_summaries=data.get("branch_summaries"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh summaries: {str(e)}"
+        )
+
+
+@router.post("/summaries/refresh-item-pairs")
+async def refresh_item_pairs(
+    user: UserPayload = Depends(require_operator),
+    tenant_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    """
+    Refresh item_pairs table for a specific date range.
+
+    Useful for historical bundle analysis (e.g., Q1 vs Q4 comparison).
+    """
+    target_tenant = tenant_id or user.tenant_id
+
+    if not target_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tenant specified."
+        )
+
+    try:
+        params = {"p_tenant_id": target_tenant}
+        if start_date:
+            params["p_start_date"] = start_date
+        if end_date:
+            params["p_end_date"] = end_date
+
+        result = supabase.rpc("refresh_item_pairs", params).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Refresh function returned no data."
+            )
+
+        # Invalidate caches
+        data_cache.invalidate_tenant(target_tenant)
+
+        return result.data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh item pairs: {str(e)}"
+        )
+
+
+# ============================================
 # TRANSACTION ENDPOINTS
 # ============================================
 
