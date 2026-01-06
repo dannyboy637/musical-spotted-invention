@@ -3,7 +3,6 @@ import { persist } from 'zustand/middleware'
 
 export type DefaultDateRange = 'today' | '7days' | '30days' | '90days' | 'all'
 export type NumberFormat = 'us' | 'eu' | 'fr'
-export type Theme = 'light' | 'dark' | 'system'
 export type TimeFormat = '12hr' | '24hr'
 
 export interface KPIOption {
@@ -34,12 +33,6 @@ export const NUMBER_FORMAT_OPTIONS: { value: NumberFormat; label: string; exampl
   { value: 'fr', label: 'FR', example: '1 234,56' },
 ]
 
-export const THEME_OPTIONS: { value: Theme; label: string }[] = [
-  { value: 'light', label: 'Light' },
-  { value: 'system', label: 'System' },
-  { value: 'dark', label: 'Dark' },
-]
-
 export const TABLE_ROWS_OPTIONS = [10, 25, 50, 100]
 
 export const TIME_FORMAT_OPTIONS: { value: TimeFormat; label: string; example: string }[] = [
@@ -52,7 +45,6 @@ interface SettingsState {
   defaultDateRange: DefaultDateRange
   enabledKPIs: string[]
   numberFormat: NumberFormat
-  theme: Theme
   tableRowsPerPage: number
   timeFormat: TimeFormat
 
@@ -61,7 +53,6 @@ interface SettingsState {
   setEnabledKPIs: (kpis: string[]) => void
   toggleKPI: (kpiId: string) => void
   setNumberFormat: (format: NumberFormat) => void
-  setTheme: (theme: Theme) => void
   setTableRowsPerPage: (rows: number) => void
   setTimeFormat: (format: TimeFormat) => void
   resetToDefaults: () => void
@@ -71,7 +62,6 @@ export const DEFAULT_SETTINGS = {
   defaultDateRange: 'all' as DefaultDateRange,
   enabledKPIs: ['revenue', 'transactions', 'avgTicket', 'uniqueItems'],
   numberFormat: 'us' as NumberFormat,
-  theme: 'system' as Theme,
   tableRowsPerPage: 25,
   timeFormat: '24hr' as TimeFormat,
 }
@@ -101,8 +91,6 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       setNumberFormat: (format) => set({ numberFormat: format }),
-
-      setTheme: (theme) => set({ theme }),
 
       setTableRowsPerPage: (rows) => set({ tableRowsPerPage: rows }),
 

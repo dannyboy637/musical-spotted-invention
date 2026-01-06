@@ -5,7 +5,6 @@ import {
   DATE_RANGE_OPTIONS,
   NUMBER_FORMAT_OPTIONS,
   TIME_FORMAT_OPTIONS,
-  THEME_OPTIONS,
   TABLE_ROWS_OPTIONS,
 } from '../../stores/settingsStore'
 import { useAuthStore } from '../../stores/authStore'
@@ -23,13 +22,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     enabledKPIs,
     numberFormat,
     timeFormat,
-    theme,
     tableRowsPerPage,
     setDefaultDateRange,
     toggleKPI,
     setNumberFormat,
     setTimeFormat,
-    setTheme,
     setTableRowsPerPage,
     resetToDefaults,
   } = useSettingsStore()
@@ -182,33 +179,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     <span className="text-sm">
                       {option.example} <span className="text-slate-400">({option.label})</span>
                     </span>
-                  </label>
-                ))}
-              </div>
-            </section>
-
-            {/* Theme */}
-            <section>
-              <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Theme</h3>
-              <div className="flex flex-wrap gap-2">
-                {THEME_OPTIONS.map((option) => (
-                  <label
-                    key={option.value}
-                    className={`inline-flex items-center px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${
-                      theme === option.value
-                        ? 'bg-navy-50 border-navy-300 text-navy-700'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="theme"
-                      value={option.value}
-                      checked={theme === option.value}
-                      onChange={() => setTheme(option.value)}
-                      className="sr-only"
-                    />
-                    <span className="text-sm">{option.label}</span>
                   </label>
                 ))}
               </div>

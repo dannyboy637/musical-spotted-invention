@@ -52,8 +52,8 @@ Port the MVP's parquet-per-dashboard pattern to Supabase:
   - MATERIALIZED CTEs (prevents redundant computation)
   - 30s statement timeout per function
   - Supabase client timeout: 120s (was ~10s default)
-- **Bug Fixes:**
-  - Theme toggle: Fixed Tailwind v4 dark mode configuration
+- **Simplifications:**
+  - Removed theme toggle (dark/system modes) - light theme only
 - **Validation Results:**
   - All dashboard modules working
   - Data isolation verified (no cross-tenant leakage)
@@ -206,7 +206,7 @@ All dashboard pages implemented with full functionality:
 - Sidebar: Collapsible (desktop), drawer overlay (mobile), nav with gold active state
 - Header: Tenant display/switcher, user dropdown with role badge
 - Filters: Date range picker, branch multi-select, category multi-select
-- Settings modal: Theme toggle, default date range preference
+- Settings modal: Default date range, number format, table rows preferences
 - URL sync: Filters persist in URL params, shareable links work
 
 ### Phase 3: Data Pipeline - COMPLETE

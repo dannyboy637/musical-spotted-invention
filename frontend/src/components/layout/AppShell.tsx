@@ -18,7 +18,7 @@ export function AppShell() {
   const { session, profile } = useAuthStore()
   const { activeTenant, fetchTenants, setActiveTenant } = useTenantStore()
   const { dateRange, fetchFilterOptions, setDateRange } = useFilterStore()
-  const { defaultDateRange, theme } = useSettingsStore()
+  const { defaultDateRange } = useSettingsStore()
 
   // Check if current route should hide global filters
   const hideGlobalFilters = ROUTES_WITHOUT_GLOBAL_FILTERS.includes(location.pathname)
@@ -52,28 +52,6 @@ export function AppShell() {
       }
     }
   }, [activeTenant?.id]) // Only run when tenant changes, not on every defaultDateRange change
-
-  // Apply theme setting
-  useEffect(() => {
-    const root = document.documentElement
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-
-    if (theme === 'dark' || (theme === 'system' && prefersDark)) {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
-
-    // Listen for system theme changes
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = (e: MediaQueryListEvent) => {
-      if (theme === 'system') {
-        root.classList.toggle('dark', e.matches)
-      }
-    }
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [theme])
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
