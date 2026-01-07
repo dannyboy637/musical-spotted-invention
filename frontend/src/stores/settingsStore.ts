@@ -59,7 +59,7 @@ interface SettingsState {
 }
 
 export const DEFAULT_SETTINGS = {
-  defaultDateRange: 'all' as DefaultDateRange,
+  defaultDateRange: '90days' as DefaultDateRange,
   enabledKPIs: ['revenue', 'transactions', 'avgTicket', 'uniqueItems'],
   numberFormat: 'us' as NumberFormat,
   tableRowsPerPage: 25,

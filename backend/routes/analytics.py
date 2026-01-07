@@ -364,6 +364,17 @@ async def get_overview(
         categories=str(filters.categories),
     )
 
+    # Get unique_items from menu_items table (v2 summary tables don't track this)
+    unique_items = 0
+    try:
+        menu_query = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", effective_tenant_id)
+        if filters.categories:
+            menu_query = menu_query.in_("category", filters.categories)
+        menu_result = menu_query.limit(1).execute()
+        unique_items = menu_result.count or 0
+    except Exception:
+        pass  # Fall back to 0 on error
+
     # Calculate growth vs previous period if date range provided
     period_growth = None
     if filters.start_date and filters.end_date:
@@ -397,7 +408,7 @@ async def get_overview(
         total_transactions=data.get("total_transactions", 0),
         unique_receipts=data.get("unique_receipts", 0),
         avg_ticket=data.get("avg_ticket", 0),
-        unique_items=data.get("unique_items", 0),
+        unique_items=unique_items,  # From menu_items table, not summary
         period_growth=period_growth,
         filters_applied=filters.model_dump(exclude_none=True),
         generated_at=datetime.utcnow().isoformat(),
