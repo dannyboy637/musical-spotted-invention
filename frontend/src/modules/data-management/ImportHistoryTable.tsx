@@ -224,8 +224,7 @@ export function ImportHistoryTable() {
     setCancellingJobId(jobId)
     try {
       await cancelMutation.mutateAsync(jobId)
-    } catch (err) {
-      console.error('Failed to cancel job:', err)
+    } catch {
       alert('Failed to cancel import. Please try again.')
     } finally {
       setCancellingJobId(null)
@@ -238,7 +237,6 @@ export function ImportHistoryTable() {
       const result = await deleteMutation.mutateAsync(jobId)
       alert(`Import deleted. ${result.transactions_deleted} transactions removed.`)
     } catch (err: unknown) {
-      console.error('Failed to delete job:', err)
       // Extract error message from axios response
       const axiosError = err as { response?: { data?: { detail?: string } } }
       const detail = axiosError?.response?.data?.detail || 'Unknown error'

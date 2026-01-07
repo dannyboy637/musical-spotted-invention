@@ -3,6 +3,12 @@ import { persist } from 'zustand/middleware'
 import { supabase } from '../lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 
+// Only log in development mode
+const isDev = import.meta.env.DEV
+const log = (...args: unknown[]) => isDev && console.log(...args)
+const warn = (...args: unknown[]) => isDev && console.warn(...args)
+const logError = (...args: unknown[]) => isDev && console.error(...args)
+
 export type UserRole = 'operator' | 'owner' | 'viewer'
 
 export interface Tenant {
@@ -47,16 +53,16 @@ export const useAuthStore = create<AuthState>()(
       initialize: async () => {
         try {
           set({ isLoading: true })
-          console.log('[AuthStore] Initializing...')
+          log('[AuthStore] Initializing...')
 
           // Get current session from Supabase
           const { data: { session }, error } = await supabase.auth.getSession()
 
           if (error) {
-            console.error('[AuthStore] getSession error:', error)
+            logError('[AuthStore] getSession error:', error)
           }
 
-          console.log('[AuthStore] Session:', session ? 'found' : 'none')
+          log('[AuthStore] Session:', session ? 'found' : 'none')
 
           if (session) {
             set({ user: session.user, session })
@@ -65,7 +71,7 @@ export const useAuthStore = create<AuthState>()(
 
           // Listen for auth changes
           supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log('[AuthStore] Auth state changed:', event)
+            log('[AuthStore] Auth state changed:', event)
             set({ user: session?.user ?? null, session })
 
             if (session) {
@@ -76,13 +82,13 @@ export const useAuthStore = create<AuthState>()(
           })
         } finally {
           set({ isLoading: false, isInitialized: true })
-          console.log('[AuthStore] Initialized')
+          log('[AuthStore] Initialized')
         }
       },
 
       login: async (email: string, password: string) => {
         set({ isLoading: true })
-        console.log('[AuthStore] Logging in:', email)
+        log('[AuthStore] Logging in:', email)
 
         try {
           const { data, error } = await supabase.auth.signInWithPassword({
@@ -91,11 +97,11 @@ export const useAuthStore = create<AuthState>()(
           })
 
           if (error) {
-            console.error('[AuthStore] Login error:', error.message)
+            logError('[AuthStore] Login error:', error.message)
             return { error: error.message }
           }
 
-          console.log('[AuthStore] Login successful, fetching profile...')
+          log('[AuthStore] Login successful, fetching profile...')
           set({ user: data.user, session: data.session })
           await get().fetchProfile()
 
@@ -137,7 +143,7 @@ export const useAuthStore = create<AuthState>()(
       fetchProfile: async () => {
         const { session } = get()
         if (!session) {
-          console.warn('[AuthStore] No session, skipping profile fetch')
+          warn('[AuthStore] No session, skipping profile fetch')
           return
         }
 
@@ -145,12 +151,12 @@ export const useAuthStore = create<AuthState>()(
         const controller = new AbortController()
         const timeoutId = setTimeout(() => {
           controller.abort()
-          console.warn('[AuthStore] Profile fetch timed out after 10 seconds')
+          warn('[AuthStore] Profile fetch timed out after 10 seconds')
         }, 10000) // 10 second timeout
 
         try {
           const apiUrl = import.meta.env.VITE_API_URL
-          console.log('[AuthStore] Fetching profile from:', `${apiUrl}/auth/me`)
+          log('[AuthStore] Fetching profile from:', `${apiUrl}/auth/me`)
 
           const response = await fetch(
             `${apiUrl}/auth/me`,
@@ -166,19 +172,19 @@ export const useAuthStore = create<AuthState>()(
 
           if (!response.ok) {
             const errorText = await response.text()
-            console.error('[AuthStore] Profile fetch failed:', response.status, errorText)
+            logError('[AuthStore] Profile fetch failed:', response.status, errorText)
             return
           }
 
           const profile = await response.json()
-          console.log('[AuthStore] Profile loaded:', profile)
+          log('[AuthStore] Profile loaded:', profile)
           set({ profile })
         } catch (error) {
           clearTimeout(timeoutId)
           if (error instanceof Error && error.name === 'AbortError') {
-            console.warn('[AuthStore] Profile fetch was aborted (timeout or navigation)')
+            warn('[AuthStore] Profile fetch was aborted (timeout or navigation)')
           } else {
-            console.error('[AuthStore] Failed to fetch profile:', error)
+            logError('[AuthStore] Failed to fetch profile:', error)
           }
         }
       },

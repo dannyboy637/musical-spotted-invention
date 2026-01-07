@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 
-from middleware.auth import get_user_with_tenant, UserPayload
+from middleware.auth import get_user_with_tenant, require_operator, UserPayload
 from db.supabase import supabase
 from utils.cache import data_cache
 
@@ -565,11 +565,12 @@ async def get_menu_engineering(
 
 @router.get("/menu-engineering/debug")
 async def debug_menu_engineering(
-    user: UserPayload = Depends(get_user_with_tenant),
+    user: UserPayload = Depends(require_operator),
     tenant_id: Optional[str] = None,
 ):
     """
     Debug endpoint for diagnosing menu engineering data issues.
+    Operator-only - returns diagnostic data for troubleshooting.
 
     Returns counts and sample data to identify why data might not be displaying.
     """

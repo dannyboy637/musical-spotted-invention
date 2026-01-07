@@ -1,5 +1,9 @@
 import type { MenuEngineeringItem, BundlePair } from '../../hooks/useAnalytics'
 
+// Only log in development mode
+const isDev = import.meta.env.DEV
+const logError = (...args: unknown[]) => isDev && console.error(...args)
+
 export interface RuleConfig {
   // Items to promote
   promoteMinQuantity: number // Percentage of median (e.g., 100 = at median)
@@ -51,7 +55,7 @@ export function loadRuleConfig(): RuleConfig {
       return { ...defaultRuleConfig, ...parsed }
     }
   } catch (e) {
-    console.error('Failed to load rule config:', e)
+    logError('Failed to load rule config:', e)
   }
   return { ...defaultRuleConfig, _version: CONFIG_VERSION } as RuleConfig
 }
@@ -61,7 +65,7 @@ export function saveRuleConfig(config: RuleConfig): void {
     const configWithVersion = { ...config, _version: CONFIG_VERSION }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(configWithVersion))
   } catch (e) {
-    console.error('Failed to save rule config:', e)
+    logError('Failed to save rule config:', e)
   }
 }
 

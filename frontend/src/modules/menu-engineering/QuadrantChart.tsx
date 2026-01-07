@@ -42,10 +42,9 @@ export function QuadrantChart({
 
   const handleRegenerate = async () => {
     try {
-      const result = await regenerate.mutateAsync()
-      console.log('Regeneration complete:', result)
-    } catch (err) {
-      console.error('Regeneration failed:', err)
+      await regenerate.mutateAsync()
+    } catch {
+      // Error handled by mutation
     }
   }
 

@@ -44,9 +44,18 @@ export const useTenantStore = create<TenantState>()(
           const tenants = await response.json()
           set({ tenants, isLoading: false })
 
-          // If no active tenant is set, set the first one
+          // Validate active tenant is still in the list (handles stale persisted state)
           const currentState = useTenantStore.getState()
-          if (!currentState.activeTenant && tenants.length > 0) {
+          if (currentState.activeTenant) {
+            const stillValid = tenants.some(
+              (t: Tenant) => t.id === currentState.activeTenant?.id
+            )
+            if (!stillValid && tenants.length > 0) {
+              // Active tenant no longer accessible, reset to first available
+              set({ activeTenant: tenants[0] })
+            }
+          } else if (tenants.length > 0) {
+            // No active tenant set, use the first one
             set({ activeTenant: tenants[0] })
           }
         } catch (error) {

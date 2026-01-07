@@ -292,8 +292,8 @@ export function ReportsPage() {
         narrative_style: style,
       })
       setShowGenerateModal(false)
-    } catch (error) {
-      console.error('Failed to generate report:', error)
+    } catch {
+      // Error handled by mutation
     }
   }
 
@@ -302,8 +302,8 @@ export function ReportsPage() {
       try {
         const result = await generateAllMutation.mutateAsync({ narrative_style: 'full' })
         alert(`Generated ${result.generated} reports. ${result.skipped} tenants already had reports.`)
-      } catch (error) {
-        console.error('Failed to generate reports:', error)
+      } catch {
+        // Error handled by mutation
       }
     }
   }

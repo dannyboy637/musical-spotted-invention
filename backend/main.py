@@ -92,6 +92,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Get frontend URL from environment or default to localhost
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+
+# Build allowed origins - only include localhost in debug mode
+ALLOWED_ORIGINS = [FRONTEND_URL]
+if DEBUG:
+    ALLOWED_ORIGINS.append("http://localhost:5173")
 
 # Middleware order matters! Last added = runs first (outermost)
 # Order from outer to inner: GZip -> CORS -> Metrics -> Rate Limit -> Routes
@@ -105,10 +111,7 @@ app.add_middleware(MetricsMiddleware)
 # CORSMiddleware - handles OPTIONS preflight immediately
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        FRONTEND_URL,
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
