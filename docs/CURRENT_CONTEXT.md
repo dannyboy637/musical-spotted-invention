@@ -1,6 +1,6 @@
 # Current Context
 
-> **Last updated:** 2026-01-07
+> **Last updated:** 2026-01-08
 > **Read this file at the start of every Claude Code session.**
 
 ---
@@ -18,31 +18,36 @@
 
 ---
 
-## Current Status: Production - Collecting User Feedback
+## Current Status: Production + Automated Data Sync
 
 **Branch:** `main`
-**Status:** Live and operational
-**Next Phase:** Phase 13 (TBD based on user feedback)
+**Status:** Live and operational with automated StoreHub sync
+**Latest Phase:** Phase 14 - Data Automation (COMPLETE)
 
 ### What's Done ✅
+- **Phase 14:** StoreHub auto-fetch (daily CSV sync via HTTP API)
 - **Database:** Summary tables created (hourly_summaries, item_pairs, branch_summaries)
 - **Database:** Refresh functions (refresh_hourly_summaries, refresh_item_pairs, refresh_branch_summaries, refresh_all_summaries)
 - **Database:** V2 analytics functions querying summary tables
+- **Database:** Fixed transaction unique constraint for duplicate prevention
 - **Backend:** All analytics endpoints migrated to v2 functions
 - **Backend:** Pydantic model types fixed for v2 responses
 - **Backend:** Cache invalidation utilities added
 - **Backend:** Auto-refresh after imports (calls `refresh_all_summaries()` automatically)
 - **Backend:** Manual refresh endpoint (`POST /data/summaries/refresh`) for operators
+- **Backend:** Auto-fetch endpoint (`POST /auto-fetch/trigger`) for cron triggers
 - **Frontend:** Delete import feature with confirmation
 - **Frontend:** Tenant column in Import History for operators
 - **Testing:** All dashboards verified working across all tenants
 - **Performance:** Dashboard loads reduced from 1-5s to <200ms
+- **Automation:** cron-job.org configured for daily 2am fetch
 
 ### Deferred to Future
 - Operator Control Hub optimization (not blocking)
 - Performance metrics/monitoring (not blocking)
+- Multi-tenant auto-fetch (credential storage, per-tenant config)
 
-### Migrations Created (031-037)
+### Migrations Created (031-038)
 - `031_create_hourly_summaries.sql`
 - `032_create_item_pairs.sql`
 - `033_create_branch_summaries.sql`
@@ -50,10 +55,27 @@
 - `035_create_analytics_v2_functions.sql`
 - `036_add_delete_import_feature.sql`
 - `037_fix_delete_import_permissions.sql`
+- `038_fix_transaction_unique_constraint.sql`
 
 ---
 
 ## Completed Phases
+
+### Phase 14: Data Automation (StoreHub Sync) ✅ COMPLETE
+- **Problem:** StoreHub has no public API, requiring manual CSV exports
+- **Solution:** Reverse-engineered StoreHub's internal HTTP API
+  - `POST /login` → Session cookie (14-day expiry)
+  - `GET /transactions/csv` → Direct CSV download
+  - No browser automation needed (pure HTTP with `httpx`)
+- **Components:**
+  - `backend/scripts/auto_fetch_storehub.py` - CLI script
+  - `backend/routes/auto_fetch.py` - API endpoint for cron
+  - Migration 038 - Fixed transaction unique constraint
+- **Automation:**
+  - cron-job.org triggers daily at 2:00 AM Manila time
+  - Calls `POST /auto-fetch/trigger?token=xxx`
+  - Runs in background, handles duplicates automatically
+- **Environment Variables:** `STOREHUB_SUBDOMAIN`, `STOREHUB_USERNAME`, `STOREHUB_PASSWORD`, `TARGET_TENANT_ID`, `AUTO_FETCH_SECRET`
 
 ### Phase 12.5: Pre-Aggregated Summary Tables ✅ COMPLETE
 - **Summary Tables:**

@@ -841,6 +841,87 @@ SELECT refresh_all_summaries('tenant-uuid-here');
 
 ---
 
+## 2026-01-08 - Phase 14: Data Automation (StoreHub Sync) Complete
+
+**Duration:** ~3 hours
+**Branch:** main
+
+**What was done:**
+
+### Problem Analysis
+- StoreHub POS has no public API
+- Clients had to manually export CSV files daily
+- Needed automated solution for daily data sync
+
+### Discovery Process (Network Inspection)
+- Used browser DevTools to analyze StoreHub's internal requests
+- Discovered simple HTTP-based export API:
+  - `POST /login` with JSON credentials → Returns `connect.sid` session cookie (14-day expiry)
+  - `GET /transactions/csv?from=...&to=...` with cookie → Returns CSV directly
+- No browser automation needed - pure HTTP requests
+- Rate limit: 500 requests/minute (generous)
+
+### Implementation
+
+1. **StoreHub Client Script** (`backend/scripts/auto_fetch_storehub.py`)
+   - `StoreHubClient` class for HTTP login and CSV download
+   - Supports date override via `FETCH_DATE` env var
+   - Dry-run mode for testing
+   - Integrates with existing `ImportService`
+
+2. **API Endpoint** (`backend/routes/auto_fetch.py`)
+   - `POST /auto-fetch/trigger?token=xxx` - Token-protected trigger
+   - `GET /auto-fetch/health` - Configuration check
+   - Runs import in background (non-blocking)
+
+3. **Duplicate Prevention Fix** (Migration 038)
+   - Problem: Old constraint included `source_row_number`, allowing duplicates
+   - Solution: Changed constraint to `(tenant_id, receipt_number, item_name, receipt_timestamp)`
+   - Migration cleaned up existing duplicates
+
+4. **Cron Setup**
+   - Service: cron-job.org (free tier)
+   - Schedule: Daily at 2:00 AM Manila time
+   - URL: `POST /auto-fetch/trigger?token=xxx`
+   - Timeout: 30 seconds (runs in background)
+
+### Testing
+- Verified login works with HTTP (no browser)
+- Tested CSV download for date ranges
+- Verified duplicate prevention (re-import shows 0 new rows)
+- Tested cron trigger via cron-job.org TEST RUN
+
+### Environment Variables Added (Railway)
+- `STOREHUB_SUBDOMAIN`
+- `STOREHUB_USERNAME`
+- `STOREHUB_PASSWORD`
+- `TARGET_TENANT_ID`
+- `AUTO_FETCH_SECRET`
+
+### Files Created
+- `backend/scripts/auto_fetch_storehub.py`
+- `backend/routes/auto_fetch.py`
+- `backend/migrations/038_fix_transaction_unique_constraint.sql`
+- `docs/specs/PHASE_14_DATA_AUTOMATION.md`
+
+### Files Modified
+- `backend/main.py` - Added auto_fetch router
+- `backend/services/import_service.py` - Updated on_conflict columns
+- `backend/.env` - Added StoreHub credentials
+- `docs/CURRENT_CONTEXT.md` - Added Phase 14
+
+**What's next:**
+- Monitor cron job execution tomorrow morning
+- Scale to multi-tenant when more clients onboard
+- Consider separate Railway service for cron worker
+
+**Blockers/Issues:**
+- None - all resolved
+
+**Phase 14 Status:** COMPLETE
+
+---
+
 ## Template
 
 ```markdown
