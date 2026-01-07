@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Clock, CheckCircle, XCircle, Loader2, Ban } from 'lucide-react'
-import { useImportJobs, useCancelImportJob } from '../../hooks/useDataManagement'
+import { ChevronDown, ChevronRight, Clock, CheckCircle, XCircle, Loader2, Ban, Trash2 } from 'lucide-react'
+import { useImportJobs, useCancelImportJob, useDeleteImportJob } from '../../hooks/useDataManagement'
 import type { ImportJob } from '../../hooks/useDataManagement'
 import { Spinner } from '../../components/ui/Spinner'
 import { useAuthStore } from '../../stores/authStore'
@@ -11,6 +11,7 @@ const statusConfig = {
   completed: { icon: CheckCircle, color: 'bg-emerald-100 text-emerald-700', label: 'Completed' },
   failed: { icon: XCircle, color: 'bg-red-100 text-red-700', label: 'Failed' },
   cancelled: { icon: Ban, color: 'bg-slate-100 text-slate-600', label: 'Cancelled' },
+  deleted: { icon: Trash2, color: 'bg-slate-100 text-slate-500', label: 'Deleted' },
 }
 
 function StatusBadge({ status }: { status: ImportJob['status'] }) {
@@ -50,11 +51,13 @@ function formatDateRange(start: string | null, end: string | null) {
 interface JobRowProps {
   job: ImportJob
   onCancel?: (jobId: string) => void
-  isCancelling?: boolean
-  showTenant?: boolean
+  onDelete?: (jobId: string) => void
+  cancellingJobId?: string | null
+  deletingJobId?: string | null
+  isOperator?: boolean
 }
 
-function JobRow({ job, onCancel, isCancelling, showTenant }: JobRowProps) {
+function JobRow({ job, onCancel, onDelete, cancellingJobId, deletingJobId, isOperator }: JobRowProps) {
   const [expanded, setExpanded] = useState(false)
 
   const errorList = job.error_details?.errors || []
@@ -63,6 +66,9 @@ function JobRow({ job, onCancel, isCancelling, showTenant }: JobRowProps) {
   const hasDetails = hasErrors || duplicateCount > 0
 
   const canCancel = (job.status === 'pending' || job.status === 'processing') && onCancel
+  const canDelete = (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') && onDelete
+  const isCancelling = cancellingJobId === job.id
+  const isDeleting = deletingJobId === job.id
 
   return (
     <>
@@ -78,14 +84,14 @@ function JobRow({ job, onCancel, isCancelling, showTenant }: JobRowProps) {
             <span className="font-medium text-slate-800 text-sm">{job.file_name}</span>
           </div>
         </td>
-        {showTenant && (
-          <td className="px-4 py-3 text-sm text-slate-600">
-            {job.tenant_name || <span className="text-slate-400 italic">Unknown</span>}
-          </td>
-        )}
         <td className="px-4 py-3">
           <StatusBadge status={job.status} />
         </td>
+        {isOperator && (
+          <td className="px-4 py-3 text-sm text-slate-700">
+            {job.tenant_name || <span className="text-slate-400">—</span>}
+          </td>
+        )}
         <td className="px-4 py-3 text-right text-sm text-slate-700">
           {job.status === 'completed' ? (
             <>
@@ -113,8 +119,8 @@ function JobRow({ job, onCancel, isCancelling, showTenant }: JobRowProps) {
         <td className="px-4 py-3 text-sm text-slate-600">
           {formatDateRange(job.date_range_start, job.date_range_end)}
         </td>
-        <td className="px-4 py-3 text-sm text-slate-500">
-          {formatRelativeTime(job.created_at)}
+        <td className="px-4 py-3 text-sm">
+          <span className="text-slate-500">{formatRelativeTime(job.created_at)}</span>
         </td>
         <td className="px-4 py-3 text-right">
           {canCancel && (
@@ -133,11 +139,28 @@ function JobRow({ job, onCancel, isCancelling, showTenant }: JobRowProps) {
               {isCancelling ? 'Cancelling...' : 'Cancel'}
             </button>
           )}
+          {canDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const count = job.inserted_rows || 0
+                if (confirm(`Delete this import and all ${count.toLocaleString()} transactions? This cannot be undone.`)) {
+                  onDelete(job.id)
+                }
+              }}
+              disabled={isDeleting}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Delete import and transactions"
+            >
+              <Trash2 size={12} />
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </button>
+          )}
         </td>
       </tr>
       {expanded && hasDetails && (
         <tr>
-          <td colSpan={showTenant ? 7 : 6} className={`px-4 py-3 border-t ${hasErrors ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
+          <td colSpan={isOperator ? 7 : 6} className={`px-4 py-3 border-t ${hasErrors ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
             <div className="text-sm">
               {hasErrors && (
                 <>
@@ -181,8 +204,13 @@ function JobRow({ job, onCancel, isCancelling, showTenant }: JobRowProps) {
 export function ImportHistoryTable() {
   const { data: jobs, isLoading, error, refetch } = useImportJobs(20, 0)
   const cancelMutation = useCancelImportJob()
-  const { user } = useAuthStore()
-  const isOperator = user?.role === 'operator'
+  const deleteMutation = useDeleteImportJob()
+  const { profile } = useAuthStore()
+  const isOperator = profile?.role === 'operator'
+
+  // Track which job is currently being operated on
+  const [cancellingJobId, setCancellingJobId] = useState<string | null>(null)
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null)
 
   // Check if any job is processing - if so, enable auto-refresh
   const hasProcessingJob = jobs?.some(j => j.status === 'pending' || j.status === 'processing')
@@ -193,11 +221,30 @@ export function ImportHistoryTable() {
   }
 
   const handleCancel = async (jobId: string) => {
+    setCancellingJobId(jobId)
     try {
       await cancelMutation.mutateAsync(jobId)
     } catch (err) {
       console.error('Failed to cancel job:', err)
       alert('Failed to cancel import. Please try again.')
+    } finally {
+      setCancellingJobId(null)
+    }
+  }
+
+  const handleDelete = async (jobId: string) => {
+    setDeletingJobId(jobId)
+    try {
+      const result = await deleteMutation.mutateAsync(jobId)
+      alert(`Import deleted. ${result.transactions_deleted} transactions removed.`)
+    } catch (err: unknown) {
+      console.error('Failed to delete job:', err)
+      // Extract error message from axios response
+      const axiosError = err as { response?: { data?: { detail?: string } } }
+      const detail = axiosError?.response?.data?.detail || 'Unknown error'
+      alert(`Failed to delete import: ${detail}`)
+    } finally {
+      setDeletingJobId(null)
     }
   }
 
@@ -236,14 +283,14 @@ export function ImportHistoryTable() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
                   File
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
+                  Status
+                </th>
                 {isOperator && (
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
                     Tenant
                   </th>
                 )}
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
-                  Status
-                </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">
                   Rows
                 </th>
@@ -264,8 +311,10 @@ export function ImportHistoryTable() {
                   key={job.id}
                   job={job}
                   onCancel={handleCancel}
-                  isCancelling={cancelMutation.isPending}
-                  showTenant={isOperator}
+                  onDelete={handleDelete}
+                  cancellingJobId={cancellingJobId}
+                  deletingJobId={deletingJobId}
+                  isOperator={isOperator}
                 />
               ))}
             </tbody>

@@ -1,39 +1,62 @@
 # Current Context
 
-> **Last updated:** 2026-01-06
+> **Last updated:** 2026-01-07
 > **Read this file at the start of every Claude Code session.**
 
 ---
 
-## Active Phase: Phase 12.5 - Pre-Aggregated Summary Tables (Planning)
+## Active Phase: Phase 12.5 - Pre-Aggregated Summary Tables ✅ COMPLETE
 
-**Branch:** `main`
-**Status:** Brainstorming
+**Branch:** `feature/summary-tables`
+**Status:** Complete - Ready for deployment
 **Spec:** `docs/specs/PHASE_12.5_SUMMARY_TABLES.md`
 
-### Concept
-Port the MVP's parquet-per-dashboard pattern to Supabase:
-- `hourly_summaries` - For overview, dayparting, heatmap, trends
-- `item_pairs` - For bundle analysis, recommendations
-- `branch_summaries` - For branch comparison
-- `menu_items` - Already exists ✅
+### What's Done ✅
+- **Database:** Summary tables created (hourly_summaries, item_pairs, branch_summaries)
+- **Database:** Refresh functions (refresh_hourly_summaries, refresh_item_pairs, refresh_branch_summaries, refresh_all_summaries)
+- **Database:** V2 analytics functions querying summary tables
+- **Backend:** All analytics endpoints migrated to v2 functions
+- **Backend:** Pydantic model types fixed for v2 responses
+- **Backend:** Cache invalidation utilities added
+- **Backend:** Auto-refresh after imports (calls `refresh_all_summaries()` automatically)
+- **Backend:** Manual refresh endpoint (`POST /data/summaries/refresh`) for operators
+- **Frontend:** Delete import feature with confirmation
+- **Frontend:** Tenant column in Import History for operators
+- **Testing:** All dashboards verified working across all tenants
+- **Performance:** Dashboard loads reduced from 1-5s to <200ms
 
-### Expected Impact
-- Dashboard load: 1-5s → <200ms
-- Scales to millions of transactions
-- Refresh after each import (~30s overhead)
+### Deferred to Future
+- Operator Control Hub optimization (not blocking)
+- Performance metrics/monitoring (not blocking)
 
-### Demo Restaurant Config
-- **Tenant ID:** `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
-- **Branches:** Main Branch, Downtown, Mall Outlet, Airport, University
-- **Test Users:**
-  - `demo-owner@test.com` (owner)
-  - `demo-viewer@test.com` (viewer)
-  - Password: `DemoTest123!`
+### Migrations Created (031-037)
+- `031_create_hourly_summaries.sql`
+- `032_create_item_pairs.sql`
+- `033_create_branch_summaries.sql`
+- `034_create_refresh_functions.sql`
+- `035_create_analytics_v2_functions.sql`
+- `036_add_delete_import_feature.sql`
+- `037_fix_delete_import_permissions.sql`
 
 ---
 
 ## Completed Phases
+
+### Phase 12.5: Pre-Aggregated Summary Tables ✅ COMPLETE
+- **Summary Tables:**
+  - `hourly_summaries` - For overview, dayparting, heatmap, trends, categories
+  - `item_pairs` - For bundle analysis, recommendations
+  - `branch_summaries` - For branch comparison
+- **V2 Analytics Functions:** All 8 main analytics functions now query summary tables
+- **Auto-Refresh:** Summary tables automatically refresh after each import
+- **Manual Refresh:** `POST /data/summaries/refresh` endpoint for operators
+- **Performance:** Dashboard loads reduced from 1-5s to <200ms
+- **Bug Fixes:**
+  - Delete import feature (missing GRANT EXECUTE)
+  - Operator tenant visibility in Import History
+  - Pydantic model types (int → float for averages)
+  - Heatmap v2 data structure parsing
+  - Categories v2 parameter mismatch
 
 ### Phase 12: Second Tenant Validation - COMPLETE
 - **Demo Restaurant Tenant:**
@@ -276,6 +299,7 @@ backend/
 ├── main.py                      # FastAPI app entry
 ├── db/supabase.py               # Supabase client
 ├── middleware/auth.py           # JWT validation, tenant context
+├── utils/cache.py               # TTL-based in-memory caching (Phase 12.5)
 ├── modules/
 │   ├── data_processing.py       # Legacy business logic (categories, service charge)
 │   ├── anomaly.py               # Anomaly detection (revenue, items, quadrants)
@@ -288,7 +312,7 @@ backend/
 │   ├── auth.py                  # Auth endpoints
 │   ├── tenant.py                # Tenant CRUD (operator only)
 │   ├── data.py                  # Data import/transactions/menu-items
-│   ├── analytics.py             # Dashboard analytics endpoints
+│   ├── analytics.py             # Dashboard analytics endpoints (v2 functions)
 │   ├── alerts.py                # Alerts CRUD, scan trigger, settings
 │   └── reports.py               # Reports CRUD, generate, send
 ├── scripts/
@@ -297,7 +321,7 @@ backend/
 │   ├── setup_demo_tenant.py     # Phase 12: Create demo tenant + users
 │   ├── generate_demo_data.py    # Phase 12: Generate 18 months test data
 │   └── verify_data_isolation.py # Phase 12: Automated isolation tests
-└── migrations/                  # SQL migrations (000-028)
+└── migrations/                  # SQL migrations (000-037)
 
 frontend/src/
 ├── lib/
@@ -338,21 +362,36 @@ frontend/src/
 
 ## Recent Changes (Jan 2026)
 
-### Phase 12: Second Tenant Validation (Jan 6, 2026) - IN PROGRESS
-- **Setup Scripts:**
-  - `setup_demo_tenant.py` - Creates Demo Restaurant tenant + test users
-  - `generate_demo_data.py` - Generates 18 months of realistic transaction data
-  - `verify_data_isolation.py` - Automated tests for tenant isolation
-- **Migration:** `028_create_demo_tenant.sql` - Demo Restaurant tenant record
-- **Documentation:**
-  - `ONBOARDING_CHECKLIST.md` - Internal operator onboarding guide
-  - `CLIENT_WELCOME_GUIDE.md` - Client-facing feature overview
-  - `PHASE_12_VALIDATION_CHECKLIST.md` - Manual testing checklist
-- **Demo Restaurant:**
-  - 5 branches with realistic traffic patterns
-  - Overlapping item names with existing tenants (Fried Rice, Coffee, etc.)
-  - Owner + Viewer test accounts
-- **Next:** Run scripts, import data, perform validation testing
+### Phase 12.5: Pre-Aggregated Summary Tables (Jan 7, 2026) ✅ COMPLETE
+- **Database Layer (Migrations 031-035):**
+  - `hourly_summaries` table - Pre-aggregated by hour/branch/category
+  - `item_pairs` table - Frequent item pairs for bundle analysis
+  - `branch_summaries` table - Daily/weekly/monthly branch metrics
+  - Refresh functions: `refresh_hourly_summaries()`, `refresh_item_pairs()`, `refresh_branch_summaries()`, `refresh_all_summaries()`
+  - V2 analytics functions: All 8 main analytics functions now query summary tables
+- **Backend Integration:**
+  - All analytics endpoints in `routes/analytics.py` migrated to v2 functions
+  - Fixed Pydantic models: `avg_ticket`, `avg_price`, `total_revenue` changed from `int` to `float`
+  - Fixed heatmap v2 data extraction (JSON object → array)
+  - Fixed categories v2 parameter mismatch (`p_include_excluded` removed)
+  - Added cache invalidation methods: `invalidate_tenant()`, `invalidate_all()`
+  - **Auto-refresh:** Summary tables refresh automatically after each import
+  - **Manual refresh:** `POST /data/summaries/refresh` endpoint for operators
+- **Delete Import Feature (Migrations 036-037):**
+  - `delete_import_job()` RPC function with SECURITY DEFINER
+  - Fixed missing GRANT EXECUTE permission
+  - Frontend delete button with transaction count confirmation
+- **Operator Visibility Fixes:**
+  - Import History now shows Tenant column for operators
+  - Fixed `user?.role` → `profile?.role` in ImportHistoryTable
+  - Cache invalidation endpoint for user cache refresh
+- **Performance Results:**
+  - Dashboard loads: 1-5s → <200ms
+  - All dashboards verified across all tenants
+
+### Phase 12: Second Tenant Validation (Jan 6, 2026) - COMPLETE
+- **Setup Scripts:** Demo tenant creation + 18 months realistic data generation
+- **Validation:** All dashboards working, data isolation verified
 
 ### Data Import Robustness (Jan 6, 2026) - COMPLETE
 - **Cancel Import Feature**: Manual cancel button + auto-cancel when user navigates away

@@ -1,6 +1,8 @@
 """
 Data import and management routes.
 """
+import re
+import json
 from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
@@ -9,6 +11,7 @@ from pydantic import BaseModel
 from middleware.auth import (
     get_user_with_tenant,
     require_operator,
+    invalidate_user_cache,
     UserPayload,
 )
 from db.supabase import supabase
@@ -214,23 +217,42 @@ async def upload_csv(
 # IMPORT JOB ENDPOINTS
 # ============================================
 
+@router.post("/cache/invalidate")
+async def invalidate_cache(
+    user: UserPayload = Depends(require_operator),
+):
+    """Invalidate the user cache. Operator-only. Use after changing user tenant/role."""
+    invalidate_user_cache(user.sub)
+    data_cache.invalidate_all()
+    return {"status": "ok", "message": "User and data caches invalidated"}
+
+
 @router.get("/imports")
 async def list_import_jobs(
     user: UserPayload = Depends(get_user_with_tenant),
     limit: int = 20,
     offset: int = 0,
 ):
-    """List import jobs for user's tenant."""
+    """List import jobs for user's tenant (or all for operators)."""
     # Include tenant name via join
     query = supabase.table("data_import_jobs").select("*, tenants(name)")
 
+    # Debug: Log what we're filtering by
+    print(f"list_import_jobs: role={user.role}, tenant_id={user.tenant_id}", flush=True)
+
+    # Operators with no active tenant see ALL imports across all tenants
+    # Operators with active tenant see only that tenant's imports
+    # Non-operators see only their tenant's imports
     if user.role == "operator":
-        # Operators see all (could filter by active tenant if set)
         if user.tenant_id:
+            # Operator has selected a specific tenant to view
             query = query.eq("tenant_id", user.tenant_id)
+        # else: no filter, operators see all tenants
     elif user.tenant_id:
+        # Non-operator with assigned tenant
         query = query.eq("tenant_id", user.tenant_id)
     else:
+        # Non-operator without tenant - no access
         return []
 
     result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
@@ -239,7 +261,13 @@ async def list_import_jobs(
     jobs = result.data or []
     for job in jobs:
         tenant_data = job.pop("tenants", None)
-        job["tenant_name"] = tenant_data.get("name") if tenant_data else None
+        # Handle both single object and list format from Supabase join
+        if isinstance(tenant_data, list) and len(tenant_data) > 0:
+            job["tenant_name"] = tenant_data[0].get("name")
+        elif isinstance(tenant_data, dict):
+            job["tenant_name"] = tenant_data.get("name")
+        else:
+            job["tenant_name"] = None
 
     return jobs
 
@@ -324,6 +352,107 @@ async def cancel_import_job(
         job_id=job_id,
         transactions_deleted=response_data.get("transactions_deleted", 0),
         message=response_data.get("message", "Job cancelled"),
+    )
+
+
+@router.post("/imports/{job_id}/delete", response_model=CancelJobResponse)
+async def delete_import_job(
+    job_id: str,
+    user: UserPayload = Depends(get_user_with_tenant),
+):
+    """
+    Delete a completed import and all its transactions.
+
+    - Only completed, failed, or cancelled jobs can be deleted
+    - Pending/processing jobs should use cancel instead
+    - Operators can delete any job
+    - Owners can delete their own tenant's jobs
+    - Viewers cannot delete
+    - Refreshes summary tables and menu items after deletion
+    """
+    if user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot delete imports"
+        )
+
+    print(f"Delete request: job_id={job_id}, user_id={user.sub}, role={user.role}", flush=True)
+
+    # Call RPC function to handle deletion atomically
+    try:
+        result = supabase.rpc("delete_import_job", {
+            "p_job_id": job_id,
+            "p_user_id": user.sub,
+        }).execute()
+        print(f"Delete RPC result: {result.data}", flush=True)
+        response_data = result.data
+    except Exception as e:
+        error_str = str(e)
+        print(f"Delete RPC error: {error_str}", flush=True)
+        response_data = None
+
+        # Supabase sometimes has trouble parsing JSONB responses but includes the data in error details
+        # The data appears as: b'{"job_id": "...", "success": true, ...}'
+        # Try to extract the actual response from the error message
+        if '"success": true' in error_str or '"success":true' in error_str:
+            # Find the JSON object boundaries
+            start_idx = error_str.find('{"job_id"')
+            if start_idx != -1:
+                # Find matching closing brace
+                end_idx = error_str.find('}', start_idx)
+                if end_idx != -1:
+                    json_str = error_str[start_idx:end_idx + 1]
+                    try:
+                        response_data = json.loads(json_str)
+                        print(f"Extracted response from error: {response_data}", flush=True)
+                    except json.JSONDecodeError as je:
+                        print(f"JSON decode error: {je}, json_str: {json_str}", flush=True)
+                        response_data = None
+
+        # If we couldn't extract a valid response, raise the original error
+        if not response_data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {error_str}"
+            )
+
+    if not response_data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RPC returned no data - function may not exist. Run migration 036."
+        )
+
+    if not response_data.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response_data.get("error", "Failed to delete job")
+        )
+
+    # Get tenant_id from response (included by RPC) for refresh operations
+    tenant_id = response_data.get("tenant_id") or user.tenant_id
+
+    if tenant_id:
+        # Refresh derived data after deletion
+        try:
+            supabase.rpc("refresh_all_summaries", {"p_tenant_id": tenant_id}).execute()
+            print(f"Refreshed summary tables for tenant {tenant_id}", flush=True)
+        except Exception as e:
+            print(f"Warning: Summary table refresh failed: {e}", flush=True)
+
+        try:
+            supabase.rpc("regenerate_menu_items", {"p_tenant_id": tenant_id}).execute()
+            print(f"Regenerated menu items for tenant {tenant_id}", flush=True)
+        except Exception as e:
+            print(f"Warning: Menu item regeneration failed: {e}", flush=True)
+
+        # Invalidate caches
+        data_cache.invalidate_tenant(tenant_id)
+
+    return CancelJobResponse(
+        success=True,
+        job_id=job_id,
+        transactions_deleted=response_data.get("transactions_deleted", 0),
+        message=response_data.get("message", "Import deleted"),
     )
 
 
@@ -461,6 +590,57 @@ async def refresh_item_pairs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to refresh item pairs: {str(e)}"
+        )
+
+
+@router.get("/summaries/status")
+async def get_summary_status(
+    user: UserPayload = Depends(get_user_with_tenant),
+):
+    """
+    Check status of summary tables for the active tenant.
+
+    Returns row counts to verify tables are populated.
+    """
+    tenant_id = user.tenant_id
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tenant context"
+        )
+
+    try:
+        # Check each summary table
+        hourly = supabase.table("hourly_summaries").select(
+            "id", count="exact"
+        ).eq("tenant_id", tenant_id).limit(1).execute()
+
+        pairs = supabase.table("item_pairs").select(
+            "id", count="exact"
+        ).eq("tenant_id", tenant_id).limit(1).execute()
+
+        branch = supabase.table("branch_summaries").select(
+            "id", count="exact"
+        ).eq("tenant_id", tenant_id).limit(1).execute()
+
+        return {
+            "tenant_id": tenant_id,
+            "hourly_summaries": hourly.count or 0,
+            "item_pairs": pairs.count or 0,
+            "branch_summaries": branch.count or 0,
+            "tables_exist": True
+        }
+    except Exception as e:
+        error_msg = str(e)
+        if "does not exist" in error_msg.lower() or "relation" in error_msg.lower():
+            return {
+                "tenant_id": tenant_id,
+                "tables_exist": False,
+                "error": "Summary tables not found. Run migrations 031-034 in Supabase."
+            }
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check summary status: {error_msg}"
         )
 
 
@@ -765,13 +945,8 @@ async def data_health_check(
 ):
     """
     Check database health and basic counts for the tenant.
+    Operators without active tenant get aggregate counts.
     """
-    if not user.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No tenant associated"
-        )
-
     health = {
         "tenant_id": user.tenant_id,
         "counts": {},
@@ -779,9 +954,19 @@ async def data_health_check(
     }
 
     try:
-        # Sequential queries (parallel ThreadPoolExecutor was adding overhead)
-        txn_result = supabase.table("transactions").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
-        menu_result = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
+        if user.tenant_id:
+            # Specific tenant counts
+            txn_result = supabase.table("transactions").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
+            menu_result = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
+        elif user.role == "operator":
+            # Operators without tenant see all counts
+            txn_result = supabase.table("transactions").select("id", count="exact").limit(1).execute()
+            menu_result = supabase.table("menu_items").select("id", count="exact").limit(1).execute()
+            health["note"] = "Showing aggregate counts (no tenant selected)"
+        else:
+            # Non-operators without tenant
+            return {"tenant_id": None, "counts": {"transactions": 0, "menu_items": 0}, "status": "no_tenant"}
+
         health["counts"]["transactions"] = txn_result.count or 0
         health["counts"]["menu_items"] = menu_result.count or 0
     except Exception:

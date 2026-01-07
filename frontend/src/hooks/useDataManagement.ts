@@ -10,7 +10,7 @@ export interface ImportJob {
   id: string
   tenant_id: string
   tenant_name: string | null  // Included via join
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'deleted'
   file_name: string
   file_path: string
   file_size_bytes: number | null
@@ -197,6 +197,38 @@ export function useCancelImportJob() {
       queryClient.invalidateQueries({ queryKey: ['import-job', data.job_id] })
       queryClient.invalidateQueries({ queryKey: ['data-health'] })
       queryClient.invalidateQueries({ queryKey: ['analytics-overview'] })
+    },
+  })
+}
+
+// Hook for deleting a completed import job and its transactions
+export function useDeleteImportJob() {
+  const { session } = useAuthStore()
+  const queryClient = useQueryClient()
+
+  return useMutation<CancelJobResponse, Error, string>({
+    mutationFn: async (jobId: string) => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const response = await axios.post(
+        `${API_URL}/data/imports/${jobId}/delete`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      )
+      return response.data
+    },
+    onSuccess: (data) => {
+      // Invalidate queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['import-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['import-job', data.job_id] })
+      queryClient.invalidateQueries({ queryKey: ['data-health'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-overview'] })
+      // Also invalidate menu items since they get regenerated
+      queryClient.invalidateQueries({ queryKey: ['menu-items'] })
     },
   })
 }

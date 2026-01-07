@@ -140,10 +140,10 @@ def get_effective_tenant_id(user: UserPayload, tenant_id_override: str = None) -
 
 class OverviewResponse(BaseModel):
     """KPI summary response."""
-    total_revenue: int  # cents
+    total_revenue: float  # now float for v2 compatibility
     total_transactions: int
     unique_receipts: int
-    avg_ticket: int  # cents
+    avg_ticket: float  # now float for v2 compatibility
     unique_items: int
     period_growth: Optional[float] = None  # percentage vs previous period
     filters_applied: dict
@@ -185,7 +185,7 @@ class DaypartData(BaseModel):
     revenue: int  # cents
     transactions: int
     quantity: int
-    avg_ticket: int  # cents
+    avg_ticket: float  # cents (float from v2 aggregation)
     percentage_of_total: float
 
 
@@ -219,7 +219,7 @@ class CategoryData(BaseModel):
     revenue: int  # cents
     quantity: int
     item_count: int
-    avg_price: int  # cents
+    avg_price: float  # cents (float from v2 aggregation)
     percentage_of_revenue: float
 
 
@@ -345,7 +345,7 @@ async def get_overview(
     filters = parse_filters(start_date, end_date, branches, categories)
 
     def fetch_overview():
-        return supabase.rpc("get_analytics_overview", {
+        return supabase.rpc("get_analytics_overview_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
@@ -375,7 +375,7 @@ async def get_overview(
             prev_end = start - timedelta(days=1)
             prev_start = prev_end - timedelta(days=period_days - 1)
 
-            prev_result = supabase.rpc("get_analytics_overview", {
+            prev_result = supabase.rpc("get_analytics_overview_v2", {
                 "p_tenant_id": effective_tenant_id,
                 "p_start_date": prev_start.isoformat()[:10],
                 "p_end_date": prev_end.isoformat()[:10],
@@ -677,7 +677,7 @@ async def get_dayparting(
     filters = parse_filters(start_date, end_date, branches, categories)
 
     def fetch_dayparting():
-        return supabase.rpc("get_analytics_dayparting", {
+        return supabase.rpc("get_analytics_dayparting_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
@@ -740,13 +740,15 @@ async def get_hourly_heatmap(
     filters = parse_filters(start_date, end_date, branches, categories)
 
     def fetch_heatmap():
-        return supabase.rpc("get_analytics_heatmap", {
+        # V2 returns {"data": [...]} so extract the data array
+        result = supabase.rpc("get_analytics_heatmap_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
             "p_branches": filters.branches,
             "p_categories": filters.categories,
-        }).execute().data or []
+        }).execute().data or {}
+        return result.get("data", []) if isinstance(result, dict) else []
 
     raw_data = data_cache.get_or_fetch(
         prefix="analytics_heatmap",
@@ -811,12 +813,13 @@ async def get_categories(
     filters = parse_filters(start_date, end_date, branches, None)  # Don't filter by category here
 
     def fetch_categories():
-        return supabase.rpc("get_analytics_categories", {
+        # Note: v2 function uses summary tables which are pre-filtered (is_excluded=false)
+        # The include_excluded parameter is not supported in v2
+        return supabase.rpc("get_analytics_categories_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
             "p_branches": filters.branches,
-            "p_include_excluded": include_excluded,
         }).execute().data or {}
 
     data = data_cache.get_or_fetch(
@@ -827,7 +830,6 @@ async def get_categories(
         start_date=filters.start_date,
         end_date=filters.end_date,
         branches=str(filters.branches),
-        include_excluded=include_excluded,
     )
     categories_data = data.get("categories") or []
 
@@ -879,7 +881,7 @@ async def get_bundles(
     filters = parse_filters(start_date, end_date, branches, None)
 
     def fetch_bundles():
-        return supabase.rpc("get_analytics_bundles", {
+        return supabase.rpc("get_analytics_bundles_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
@@ -945,7 +947,7 @@ async def get_performance(
     filters = parse_filters(start_date, end_date, branches, categories)
 
     def fetch_performance():
-        return supabase.rpc("get_analytics_performance", {
+        return supabase.rpc("get_analytics_performance_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
@@ -993,7 +995,7 @@ async def get_performance_trends(
     filters = parse_filters(start_date, end_date, branches, categories)
 
     def fetch_trends():
-        return supabase.rpc("get_analytics_trends", {
+        return supabase.rpc("get_analytics_trends_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
@@ -1059,7 +1061,7 @@ async def get_performance_branches(
     filters = parse_filters(start_date, end_date, None, categories)  # Don't filter by branch here
 
     def fetch_branches():
-        return supabase.rpc("get_analytics_branches", {
+        return supabase.rpc("get_analytics_branches_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
@@ -1114,7 +1116,7 @@ async def get_day_of_week(
 
     # Fetch daily aggregated data using the trends endpoint data
     # We need date-level data to calculate day-of-week averages
-    result = supabase.rpc("get_analytics_trends", {
+    result = supabase.rpc("get_analytics_trends_v2", {
         "p_tenant_id": effective_tenant_id,
         "p_start_date": filters.start_date,
         "p_end_date": filters.end_date,
@@ -1236,7 +1238,7 @@ async def get_year_over_year(
     filters = parse_filters(None, None, branches, categories)
 
     # Get monthly data without date filtering to see all available data
-    result = supabase.rpc("get_analytics_trends", {
+    result = supabase.rpc("get_analytics_trends_v2", {
         "p_tenant_id": effective_tenant_id,
         "p_start_date": None,
         "p_end_date": None,

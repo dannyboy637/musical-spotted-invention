@@ -347,7 +347,7 @@ def transform_storehub_row(
         'gross_revenue': safe_int(gross_revenue * 100, 0),
         'macro_category': get_macro_category(category),
         'is_excluded': is_excluded_category(category),
-        'store_name': get_column_value(row, 'Store', 'store', 'STORE'),
+        'store_name': get_column_value(row, 'Store Name', 'Store', 'store_name', 'store', 'STORE', 'Branch', 'branch'),
     }
 
 

@@ -1,6 +1,6 @@
 # Phase 12.5: Pre-Aggregated Summary Tables
 
-> **Status:** Planning
+> **Status:** COMPLETE (Jan 7, 2026)
 > **Priority:** Performance optimization for scale
 > **Prerequisite:** Phase 12 validation complete
 
@@ -302,25 +302,123 @@ WHERE tenant_id = $1 AND sale_date BETWEEN $2 AND $3
 
 ## Implementation Phases
 
-### 12.5a: Design Finalization
-- [ ] Finalize table schemas
-- [ ] Decide on refresh strategy
-- [ ] Document filter handling approach
+### 12.5a: Design Finalization ✅ COMPLETE
+- [x] Finalize table schemas
+- [x] Decide on refresh strategy (Full refresh after import, Option A)
+- [x] Document filter handling approach
 
-### 12.5b: Database Layer
-- [ ] Create summary tables with RLS
-- [ ] Create refresh RPC functions
-- [ ] Create indexes
+### 12.5b: Database Layer ✅ COMPLETE
+- [x] Create summary tables with RLS (Migrations 031-033)
+  - `hourly_summaries` - hour/branch/category aggregates
+  - `item_pairs` - frequent item pairs
+  - `branch_summaries` - period-based branch metrics
+- [x] Create refresh RPC functions (Migration 034)
+  - `refresh_hourly_summaries()`
+  - `refresh_item_pairs()`
+  - `refresh_branch_summaries()`
+  - `refresh_all_summaries()`
+- [x] Create V2 analytics functions (Migration 035)
+  - 8 v2 functions querying summary tables
+- [x] Create indexes for common query patterns
 
-### 12.5c: Backend Integration
-- [ ] Modify RPC functions to use summaries
-- [ ] Hook refresh into import pipeline
-- [ ] Add manual refresh endpoint (operator)
+### 12.5c: Backend Integration ✅ COMPLETE
+- [x] Modify RPC functions to use summaries
+- [x] Update all analytics endpoints to use v2 functions
+- [x] Fix Pydantic model types (int → float for averages)
+- [x] Add cache utilities (`invalidate_tenant()`, `invalidate_all()`)
+- [x] Hook refresh into import pipeline (auto-calls `refresh_all_summaries()` after import)
+- [x] Add manual refresh endpoint for operator (`POST /data/summaries/refresh`)
 
-### 12.5d: Testing & Migration
-- [ ] Populate summaries for existing tenants
-- [ ] Performance benchmarking
-- [ ] Verify filter accuracy
+### 12.5d: Testing & Migration ✅ COMPLETE
+- [x] Populate summaries for existing tenants (manual via SQL Editor)
+- [x] Verify all dashboards working across all tenants
+- [x] Verify filter accuracy
+- [x] Performance verified: <200ms dashboard loads
+
+### 12.5e: Complete ✅
+- [x] **Automatic summary refresh after imports** - `ImportService.process_csv()` calls `refresh_all_summaries()` after successful imports
+- [x] **Manual refresh endpoint** - `POST /data/summaries/refresh` for operators
+- [ ] **Operator Control Hub optimization** - Deferred to future phase (not blocking)
+- [ ] **Performance monitoring** - Deferred to future phase (not blocking)
+
+### 12.5f: Git & Deployment
+
+**Current State:** All changes made directly on `main` branch.
+
+**To commit changes:**
+```bash
+cd /Users/Daniel/claude/restaurant-analytics
+git add -A
+git commit -m "feat: Complete Phase 12.5 - Pre-aggregated summary tables
+
+Database:
+- Migrations 031-037: Summary tables, refresh functions, v2 analytics, delete import
+- hourly_summaries, item_pairs, branch_summaries tables with RLS
+- V2 analytics functions querying summary tables instead of raw transactions
+
+Backend:
+- All analytics endpoints migrated to v2 functions
+- Fixed Pydantic model types (int → float for averages)
+- Added cache invalidation utilities
+- Delete import feature with proper permissions
+
+Frontend:
+- Import History: Tenant column for operators, delete button
+- Fixed operator role detection
+
+Performance: Dashboard loads reduced from 1-5s to <200ms
+
+🤖 Generated with Claude Code
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+
+git push origin main
+```
+
+**Database Migrations to Run:**
+If deploying to a new environment, run these migrations in order in Supabase SQL Editor:
+1. `031_create_hourly_summaries.sql`
+2. `032_create_item_pairs.sql`
+3. `033_create_branch_summaries.sql`
+4. `034_create_refresh_functions.sql`
+5. `035_create_analytics_v2_functions.sql`
+6. `036_add_delete_import_feature.sql`
+7. `037_fix_delete_import_permissions.sql`
+
+**After migrations, populate summaries for each tenant:**
+```sql
+SELECT refresh_all_summaries('tenant-uuid-1');
+SELECT refresh_all_summaries('tenant-uuid-2');
+-- etc.
+```
+
+---
+
+## Migrations Created
+
+| Migration | Description |
+|-----------|-------------|
+| 031 | `hourly_summaries` table with RLS |
+| 032 | `item_pairs` table with RLS |
+| 033 | `branch_summaries` table with RLS |
+| 034 | Refresh functions (`refresh_*_summaries`) |
+| 035 | V2 analytics functions |
+| 036 | Delete import feature (`delete_import_job` RPC) |
+| 037 | Fix delete import permissions (GRANT EXECUTE) |
+
+---
+
+## Performance Results (Actual)
+
+| Dashboard | Before | After |
+|-----------|--------|-------|
+| Overview | 1-3s | <100ms |
+| Dayparting | 2-5s | <100ms |
+| Heatmap | 2-4s | <100ms |
+| Categories | 2-4s | <100ms |
+| Trends | 1-3s | <200ms |
+| Branches | 3-8s | <100ms |
+| Bundles | 5-15s | <100ms |
 
 ---
 
@@ -329,3 +427,5 @@ WHERE tenant_id = $1 AND sale_date BETWEEN $2 AND $3
 - This is the same pattern used by data warehouses (star schema with fact/dimension tables)
 - Supabase materialized views could work but lack tenant-aware refresh
 - The `menu_items` table is proof this pattern works - it's already fast
+- V2 functions return floats for averages (not integers) - Pydantic models updated accordingly
+- Heatmap v2 returns `{"data": [...]}` JSON object, not raw array

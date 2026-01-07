@@ -143,6 +143,25 @@ class DataCache:
             for key in keys_to_delete:
                 del cache[key]
 
+    def invalidate_tenant(self, tenant_id: str) -> None:
+        """
+        Invalidate all entries related to a specific tenant.
+        Searches for tenant_id in the cache key hash.
+
+        Args:
+            tenant_id: Tenant ID to invalidate
+        """
+        # Since tenant_id is hashed into the key, we need to clear broadly
+        # Clear all analytics-related caches for safety
+        for prefix in ["branches", "categories", "analytics", "overview", "menu"]:
+            self.invalidate_prefix(prefix)
+
+    def invalidate_all(self) -> None:
+        """Clear all caches. Use sparingly."""
+        self._short.clear()
+        self._medium.clear()
+        self._long.clear()
+
     @property
     def stats(self) -> dict:
         """Get cache statistics for monitoring."""
