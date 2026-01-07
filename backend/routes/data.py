@@ -103,12 +103,13 @@ async def process_import_task(
 async def upload_csv(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    tenant_id: Optional[str] = None,  # Operators can specify target tenant
     user: UserPayload = Depends(get_user_with_tenant),
 ):
     """
     Upload a CSV file for processing.
 
-    - Operators can upload for any tenant
+    - Operators can upload for any tenant (specify tenant_id param)
     - Owners can upload for their own tenant
     - Viewers cannot upload
     """
@@ -118,20 +119,31 @@ async def upload_csv(
             detail="Viewers cannot upload data"
         )
 
-    if not user.tenant_id and user.role != "operator":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No tenant associated with user"
-        )
+    # Determine target tenant
+    if user.role == "operator":
+        # Operators: use provided tenant_id, fall back to user.tenant_id
+        target_tenant = tenant_id or user.tenant_id
+        if not target_tenant:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Operator must specify tenant_id or have an active tenant selected"
+            )
+    else:
+        # Non-operators: must use their own tenant
+        if not user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No tenant associated with user"
+            )
+        target_tenant = user.tenant_id
+        # Non-operators cannot override tenant_id
+        if tenant_id and tenant_id != user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot upload to a different tenant"
+            )
 
-    tenant_id = user.tenant_id
-
-    # Operators without tenant_id need to specify one
-    if user.role == "operator" and not tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Operator must have an active tenant selected"
-        )
+    tenant_id = target_tenant
 
     # Validate file
     if not file.filename or not file.filename.endswith('.csv'):
@@ -209,7 +221,8 @@ async def list_import_jobs(
     offset: int = 0,
 ):
     """List import jobs for user's tenant."""
-    query = supabase.table("data_import_jobs").select("*")
+    # Include tenant name via join
+    query = supabase.table("data_import_jobs").select("*, tenants(name)")
 
     if user.role == "operator":
         # Operators see all (could filter by active tenant if set)
@@ -221,7 +234,14 @@ async def list_import_jobs(
         return []
 
     result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-    return result.data or []
+
+    # Flatten tenant name into job object for easier frontend consumption
+    jobs = result.data or []
+    for job in jobs:
+        tenant_data = job.pop("tenants", None)
+        job["tenant_name"] = tenant_data.get("name") if tenant_data else None
+
+    return jobs
 
 
 @router.get("/imports/{job_id}")

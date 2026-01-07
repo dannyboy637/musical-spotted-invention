@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Clock, CheckCircle, XCircle, Loader2, Ban } 
 import { useImportJobs, useCancelImportJob } from '../../hooks/useDataManagement'
 import type { ImportJob } from '../../hooks/useDataManagement'
 import { Spinner } from '../../components/ui/Spinner'
+import { useAuthStore } from '../../stores/authStore'
 
 const statusConfig = {
   pending: { icon: Clock, color: 'bg-amber-100 text-amber-700', label: 'Pending' },
@@ -50,9 +51,10 @@ interface JobRowProps {
   job: ImportJob
   onCancel?: (jobId: string) => void
   isCancelling?: boolean
+  showTenant?: boolean
 }
 
-function JobRow({ job, onCancel, isCancelling }: JobRowProps) {
+function JobRow({ job, onCancel, isCancelling, showTenant }: JobRowProps) {
   const [expanded, setExpanded] = useState(false)
 
   const errorList = job.error_details?.errors || []
@@ -76,6 +78,11 @@ function JobRow({ job, onCancel, isCancelling }: JobRowProps) {
             <span className="font-medium text-slate-800 text-sm">{job.file_name}</span>
           </div>
         </td>
+        {showTenant && (
+          <td className="px-4 py-3 text-sm text-slate-600">
+            {job.tenant_name || <span className="text-slate-400 italic">Unknown</span>}
+          </td>
+        )}
         <td className="px-4 py-3">
           <StatusBadge status={job.status} />
         </td>
@@ -130,7 +137,7 @@ function JobRow({ job, onCancel, isCancelling }: JobRowProps) {
       </tr>
       {expanded && hasDetails && (
         <tr>
-          <td colSpan={6} className={`px-4 py-3 border-t ${hasErrors ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
+          <td colSpan={showTenant ? 7 : 6} className={`px-4 py-3 border-t ${hasErrors ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
             <div className="text-sm">
               {hasErrors && (
                 <>
@@ -174,6 +181,8 @@ function JobRow({ job, onCancel, isCancelling }: JobRowProps) {
 export function ImportHistoryTable() {
   const { data: jobs, isLoading, error, refetch } = useImportJobs(20, 0)
   const cancelMutation = useCancelImportJob()
+  const { user } = useAuthStore()
+  const isOperator = user?.role === 'operator'
 
   // Check if any job is processing - if so, enable auto-refresh
   const hasProcessingJob = jobs?.some(j => j.status === 'pending' || j.status === 'processing')
@@ -227,6 +236,11 @@ export function ImportHistoryTable() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
                   File
                 </th>
+                {isOperator && (
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
+                    Tenant
+                  </th>
+                )}
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">
                   Status
                 </th>
@@ -251,6 +265,7 @@ export function ImportHistoryTable() {
                   job={job}
                   onCancel={handleCancel}
                   isCancelling={cancelMutation.isPending}
+                  showTenant={isOperator}
                 />
               ))}
             </tbody>

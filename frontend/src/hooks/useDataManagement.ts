@@ -9,6 +9,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 export interface ImportJob {
   id: string
   tenant_id: string
+  tenant_name: string | null  // Included via join
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
   file_name: string
   file_path: string
@@ -98,6 +99,7 @@ export function useImportJob(
 // Hook for file upload mutation with progress tracking
 export function useUploadCSV(onProgress?: (progress: number) => void) {
   const { session } = useAuthStore()
+  const { activeTenant } = useTenantStore()
   const queryClient = useQueryClient()
 
   return useMutation<UploadResponse, Error, File>({
@@ -106,21 +108,30 @@ export function useUploadCSV(onProgress?: (progress: number) => void) {
         throw new Error('No access token')
       }
 
+      if (!activeTenant?.id) {
+        throw new Error('No tenant selected')
+      }
+
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await axios.post(`${API_URL}/data/upload`, formData, {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'multipart/form-data',
-        },
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total && onProgress) {
-            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-            onProgress(percent)
-          }
-        },
-      })
+      // Include tenant_id as query parameter so operators upload to the correct tenant
+      const response = await axios.post(
+        `${API_URL}/data/upload?tenant_id=${activeTenant.id}`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total && onProgress) {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+              onProgress(percent)
+            }
+          },
+        }
+      )
       return response.data
     },
     onSuccess: () => {
