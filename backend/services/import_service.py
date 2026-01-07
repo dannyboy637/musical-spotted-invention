@@ -151,7 +151,7 @@ class ImportService:
                         # Use upsert with on_conflict to match the unique constraint columns
                         result = supabase.table("transactions").upsert(
                             transactions,
-                            on_conflict="tenant_id,receipt_number,item_name,source_row_number",
+                            on_conflict="tenant_id,receipt_number,item_name,receipt_timestamp",
                             ignore_duplicates=True
                         ).execute()
                         actual_inserted = len(result.data) if result.data else 0
@@ -173,7 +173,7 @@ class ImportService:
                             try:
                                 result = supabase.table("transactions").upsert(
                                     t,
-                                    on_conflict="tenant_id,receipt_number,item_name,source_row_number",
+                                    on_conflict="tenant_id,receipt_number,item_name,receipt_timestamp",
                                     ignore_duplicates=True
                                 ).execute()
                                 if result.data:
@@ -247,7 +247,7 @@ class ImportService:
             try:
                 result = supabase.table("transactions").upsert(
                     transactions,
-                    on_conflict="tenant_id,receipt_number,item_name,source_row_number",
+                    on_conflict="tenant_id,receipt_number,item_name,receipt_timestamp",
                     ignore_duplicates=True
                 ).execute()
                 actual_inserted = len(result.data) if result.data else 0
@@ -259,7 +259,7 @@ class ImportService:
                     try:
                         result = supabase.table("transactions").upsert(
                             t,
-                            on_conflict="tenant_id,receipt_number,item_name,source_row_number",
+                            on_conflict="tenant_id,receipt_number,item_name,receipt_timestamp",
                             ignore_duplicates=True
                         ).execute()
                         if result.data:
