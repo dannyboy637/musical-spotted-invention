@@ -5,11 +5,24 @@
 
 ---
 
-## Active Phase: Phase 12.5 - Pre-Aggregated Summary Tables ✅ COMPLETE
+## 🎉 V1 LAUNCHED - Production Deployment Complete
 
-**Branch:** `feature/summary-tables`
-**Status:** Complete - Ready for deployment
-**Spec:** `docs/specs/PHASE_12.5_SUMMARY_TABLES.md`
+**Frontend:** https://musical-spotted-invention.vercel.app/
+**Backend:** https://musical-spotted-invention-production.up.railway.app/
+**Database:** Supabase (PostgreSQL with RLS)
+
+**Deployment Stack:**
+- Frontend: Vercel (auto-deploy from main)
+- Backend: Railway (auto-deploy from main)
+- Database/Auth: Supabase
+
+---
+
+## Current Status: Production - Collecting User Feedback
+
+**Branch:** `main`
+**Status:** Live and operational
+**Next Phase:** Phase 13 (TBD based on user feedback)
 
 ### What's Done ✅
 - **Database:** Summary tables created (hourly_summaries, item_pairs, branch_summaries)
@@ -271,6 +284,12 @@ All dashboard pages implemented with full functionality:
 
 ## Environment
 
+### Production
+- Frontend: https://musical-spotted-invention.vercel.app/
+- Backend: https://musical-spotted-invention-production.up.railway.app/
+- Database: Supabase (hosted PostgreSQL)
+
+### Local Development
 - Backend: `http://localhost:8000`
 - Frontend: `http://localhost:5173`
 - Supabase: Project configured (credentials in `.env` files)

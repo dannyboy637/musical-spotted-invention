@@ -777,6 +777,70 @@ SELECT refresh_all_summaries('tenant-uuid-here');
 
 ---
 
+## 2026-01-07 - 🎉 V1 Production Launch
+
+**Duration:** ~3 hours
+**Branch:** main
+
+**What was done:**
+
+### Cloud Deployment
+- **Backend:** Deployed to Railway
+  - Created `Procfile`, `runtime.txt`, `railway.json`
+  - Fixed macOS-only packages in `requirements.txt` (removed pyobjc-*, pygame, etc.)
+  - Configured environment variables (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, etc.)
+- **Frontend:** Deployed to Vercel
+  - Added `vercel.json` for SPA routing (fixes 404 on page refresh)
+  - Auto-deploys from main branch
+
+### Production Bug Fixes
+1. **Auth infinite redirect loop** - Trailing space in Railway SUPABASE_URL env var
+2. **Default date range "All Time"** - Changed localStorage default to '90days' in settingsStore.ts
+3. **Unique items showing 0** - V2 analytics didn't track unique items; added menu_items query
+
+### Security Hardening
+- **CORS:** Only allow localhost origin when DEBUG=true (not in production)
+- **Debug endpoint:** Restricted `/menu-engineering/debug` to operators only
+- **Console logging:** Wrapped all console.log/warn/error in dev-only checks across 6 files:
+  - `frontend/src/stores/authStore.ts`
+  - `frontend/src/stores/tenantStore.ts` (also added stale tenant validation)
+  - `frontend/src/modules/reports/ReportsPage.tsx`
+  - `frontend/src/modules/data-management/ImportHistoryTable.tsx`
+  - `frontend/src/modules/menu-engineering/QuadrantChart.tsx`
+  - `frontend/src/modules/recommendations/ruleEngine.ts`
+- **Stale tenant validation:** If operator's cached activeTenant is no longer accessible, reset to first available
+
+### Production URLs
+- Frontend: https://musical-spotted-invention.vercel.app/
+- Backend: https://musical-spotted-invention-production.up.railway.app/
+- Health check: https://musical-spotted-invention-production.up.railway.app/health
+
+### Files Created
+- `Procfile` - Railway start command
+- `runtime.txt` - Python version for Railway
+- `railway.json` - Railway build configuration
+- `frontend/vercel.json` - Vercel SPA routing
+
+### Files Modified
+- `backend/main.py` - CORS hardening (localhost only in DEBUG mode)
+- `backend/routes/analytics.py` - Debug endpoint restricted, unique_items fix
+- `backend/requirements.txt` - Removed macOS-specific packages
+- `frontend/src/stores/settingsStore.ts` - Default date range to '90days'
+- `frontend/src/stores/authStore.ts` - Dev-only logging
+- `frontend/src/stores/tenantStore.ts` - Stale tenant validation, dev-only logging
+- Multiple frontend components - Dev-only logging
+
+**What's next:**
+- Collect user feedback
+- Phase 13: Features based on feedback
+
+**Blockers/Issues:**
+- None - all resolved
+
+**V1 Status:** 🎉 LAUNCHED
+
+---
+
 ## Template
 
 ```markdown
