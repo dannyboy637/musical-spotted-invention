@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { X, ChevronDown, ChevronUp, Filter } from 'lucide-react'
 import { DateRangePicker } from '../ui/DateRangePicker'
 import { MultiSelect } from '../ui/MultiSelect'
@@ -12,6 +12,12 @@ import {
 export function GlobalFilters() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [isExpanded, setIsExpanded] = useState(false)
+  const location = useLocation()
+
+  // Hide filters that are irrelevant to the current page
+  const showBranchFilter = location.pathname !== '/branches'
+  const showCategoryFilter = location.pathname !== '/categories'
+
   const {
     dateRange,
     branches,
@@ -89,27 +95,31 @@ export function GlobalFilters() {
             <DateRangePicker value={dateRange} onChange={setDateRange} />
           </div>
 
-          {/* Branches */}
-          <div className="w-full sm:w-auto min-w-[180px]">
-            <MultiSelect
-              label="Branches"
-              options={availableBranches}
-              selected={branches}
-              onChange={setBranches}
-              placeholder="All branches"
-            />
-          </div>
+          {/* Branches - hidden on Branches page */}
+          {showBranchFilter && (
+            <div className="w-full sm:w-auto min-w-[180px]">
+              <MultiSelect
+                label="Branches"
+                options={availableBranches}
+                selected={branches}
+                onChange={setBranches}
+                placeholder="All branches"
+              />
+            </div>
+          )}
 
-          {/* Categories */}
-          <div className="w-full sm:w-auto min-w-[180px]">
-            <MultiSelect
-              label="Categories"
-              options={availableCategories}
-              selected={categories}
-              onChange={setCategories}
-              placeholder="All categories"
-            />
-          </div>
+          {/* Categories - hidden on Categories page */}
+          {showCategoryFilter && (
+            <div className="w-full sm:w-auto min-w-[180px]">
+              <MultiSelect
+                label="Categories"
+                options={availableCategories}
+                selected={categories}
+                onChange={setCategories}
+                placeholder="All categories"
+              />
+            </div>
+          )}
 
           {/* Clear All Filters */}
           {hasActiveFilters && (
