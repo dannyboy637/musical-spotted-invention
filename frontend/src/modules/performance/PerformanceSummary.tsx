@@ -2,7 +2,7 @@ import { Calendar } from 'lucide-react'
 import { StatCard } from '../../components/ui/StatCard'
 import { usePerformance } from '../../hooks/useAnalytics'
 import { formatCurrency, formatCurrencyFull } from '../../lib/chartConfig'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, differenceInDays } from 'date-fns'
 
 export function PerformanceSummary() {
   const { data, isLoading } = usePerformance()
@@ -12,6 +12,18 @@ export function PerformanceSummary() {
       return format(parseISO(dateStr), 'MMM d')
     } catch {
       return dateStr
+    }
+  }
+
+  // Check if worst day is recent (within 2 days) - may have incomplete data
+  const isWorstDayRecent = () => {
+    if (!data?.trends.worst_day?.date) return false
+    try {
+      const worstDate = parseISO(data.trends.worst_day.date)
+      const daysDiff = differenceInDays(new Date(), worstDate)
+      return daysDiff <= 2
+    } catch {
+      return false
     }
   }
 
@@ -44,6 +56,7 @@ export function PerformanceSummary() {
           label="Worst Day"
           value={data?.trends.worst_day ? formatDate(data.trends.worst_day.date) : '-'}
           sublabel={data?.trends.worst_day ? formatCurrency(data.trends.worst_day.revenue) : undefined}
+          note={isWorstDayRecent() ? 'May have incomplete data' : undefined}
           color="warning"
           loading={isLoading}
         />
