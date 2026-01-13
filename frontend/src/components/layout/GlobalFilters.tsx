@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { X, ChevronDown, ChevronUp, Filter } from 'lucide-react'
+import { useSearchParams, useLocation } from 'react-router-dom'
+import { X, ChevronDown, ChevronUp, Filter, Info } from 'lucide-react'
 import { DateRangePicker } from '../ui/DateRangePicker'
 import { MultiSelect } from '../ui/MultiSelect'
 import {
@@ -12,6 +12,7 @@ import {
 export function GlobalFilters() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [isExpanded, setIsExpanded] = useState(false)
+  const location = useLocation()
   const {
     dateRange,
     branches,
@@ -23,6 +24,10 @@ export function GlobalFilters() {
     setCategories,
     clearFilters,
   } = useFilterStore()
+
+  // Hide branch filter on menu engineering page (data is restaurant-wide)
+  const isMenuEngineering = location.pathname === '/menu-engineering'
+  const showBranchFilter = !isMenuEngineering
 
   const hasActiveFilters = dateRange !== null || branches.length > 0 || categories.length > 0
   const activeFilterCount = (dateRange ? 1 : 0) + (branches.length > 0 ? 1 : 0) + (categories.length > 0 ? 1 : 0)
@@ -89,16 +94,23 @@ export function GlobalFilters() {
             <DateRangePicker value={dateRange} onChange={setDateRange} />
           </div>
 
-          {/* Branches */}
-          <div className="w-full sm:w-auto min-w-[180px]">
-            <MultiSelect
-              label="Branches"
-              options={availableBranches}
-              selected={branches}
-              onChange={setBranches}
-              placeholder="All branches"
-            />
-          </div>
+          {/* Branches - hidden on menu engineering page */}
+          {showBranchFilter ? (
+            <div className="w-full sm:w-auto min-w-[180px]">
+              <MultiSelect
+                label="Branches"
+                options={availableBranches}
+                selected={branches}
+                onChange={setBranches}
+                placeholder="All branches"
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-slate-500 bg-slate-50 rounded-md border border-slate-200">
+              <Info size={14} />
+              <span>Restaurant-wide view (all branches)</span>
+            </div>
+          )}
 
           {/* Categories */}
           <div className="w-full sm:w-auto min-w-[180px]">

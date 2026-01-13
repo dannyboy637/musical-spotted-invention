@@ -231,6 +231,26 @@ class CategoriesResponse(BaseModel):
     generated_at: str
 
 
+class CategoryItemData(BaseModel):
+    """Individual item within a category."""
+    item_name: str
+    quantity: int
+    revenue: int  # cents
+    avg_price: float  # cents
+    percentage_of_category: float
+
+
+class CategoryItemsResponse(BaseModel):
+    """Items within a specific category."""
+    category: str
+    items: List[CategoryItemData]
+    total_items: int
+    total_revenue: int
+    total_quantity: int
+    filters_applied: dict
+    generated_at: str
+
+
 class BundlePair(BaseModel):
     """A frequently purchased item pair."""
     item_a: str
@@ -862,6 +882,110 @@ async def get_categories(
         categories=categories,
         macro_totals=data.get("macro_totals") or {},
         filters_applied=filters.model_dump(exclude_none=True),
+        generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+# ============================================
+# CATEGORY ITEMS ENDPOINT
+# ============================================
+
+@router.get("/category-items", response_model=CategoryItemsResponse)
+async def get_category_items(
+    category: str = Query(..., description="Category name to fetch items for"),
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    branches: Optional[str] = None,
+):
+    """
+    Get item-level breakdown for a specific category.
+
+    Supports branch filtering - queries transactions directly.
+    This allows users to see how items within a category perform at specific branches.
+    Cached for 30 seconds.
+    """
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    filters = parse_filters(start_date, end_date, branches, None)
+
+    def fetch_category_items():
+        # Query transactions directly to support branch filtering
+        data = fetch_all_transactions(
+            effective_tenant_id,
+            AnalyticsFilters(
+                start_date=filters.start_date,
+                end_date=filters.end_date,
+                branches=filters.branches,
+                categories=[category]  # Filter to specific category
+            ),
+            "item_name, gross_revenue, quantity",
+            max_rows=100000
+        )
+
+        # Aggregate by item
+        item_totals = {}
+        total_revenue = 0
+        total_quantity = 0
+
+        for row in data:
+            item_name = row.get("item_name", "Unknown")
+            revenue = row.get("gross_revenue", 0) or 0
+            qty = row.get("quantity", 0) or 0
+
+            if item_name not in item_totals:
+                item_totals[item_name] = {"revenue": 0, "quantity": 0}
+
+            item_totals[item_name]["revenue"] += revenue
+            item_totals[item_name]["quantity"] += qty
+            total_revenue += revenue
+            total_quantity += qty
+
+        # Build items list sorted by revenue descending
+        items = []
+        for item_name, totals in sorted(
+            item_totals.items(),
+            key=lambda x: x[1]["revenue"],
+            reverse=True
+        ):
+            pct = (totals["revenue"] / total_revenue * 100) if total_revenue > 0 else 0
+            avg_price = totals["revenue"] / totals["quantity"] if totals["quantity"] > 0 else 0
+
+            items.append({
+                "item_name": item_name,
+                "quantity": totals["quantity"],
+                "revenue": totals["revenue"],
+                "avg_price": round(avg_price, 2),
+                "percentage_of_category": round(pct, 1),
+            })
+
+        return {
+            "items": items,
+            "total_revenue": total_revenue,
+            "total_quantity": total_quantity,
+        }
+
+    data = data_cache.get_or_fetch(
+        prefix="analytics_category_items",
+        fetch_fn=fetch_category_items,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        category=category,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+    )
+
+    return CategoryItemsResponse(
+        category=category,
+        items=[CategoryItemData(**item) for item in data.get("items", [])],
+        total_items=len(data.get("items", [])),
+        total_revenue=data.get("total_revenue", 0),
+        total_quantity=data.get("total_quantity", 0),
+        filters_applied={
+            "category": category,
+            **filters.model_dump(exclude_none=True),
+        },
         generated_at=datetime.utcnow().isoformat(),
     )
 

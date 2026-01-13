@@ -1,9 +1,10 @@
-import { X } from 'lucide-react'
+import { X, Store } from 'lucide-react'
 import { DataTable } from '../../components/ui/DataTable'
 import type { Column } from '../../components/ui/DataTable'
-import { useMenuEngineering } from '../../hooks/useAnalytics'
-import type { MenuEngineeringItem } from '../../hooks/useAnalytics'
-import { formatCurrency, quadrantColors } from '../../lib/chartConfig'
+import { useCategoryItems } from '../../hooks/useAnalytics'
+import type { CategoryItemData } from '../../hooks/useAnalytics'
+import { formatCurrency } from '../../lib/chartConfig'
+import { useFilterStore } from '../../stores/filterStore'
 
 interface CategoryItemsPanelProps {
   category: string | null
@@ -11,50 +12,46 @@ interface CategoryItemsPanelProps {
 }
 
 export function CategoryItemsPanel({ category, onClose }: CategoryItemsPanelProps) {
-  const { data, isLoading } = useMenuEngineering()
+  const { data, isLoading } = useCategoryItems(category)
+  const { branches } = useFilterStore()
 
   if (!category) return null
 
-  // Filter items by category
-  const categoryItems = (data?.items || [])
-    .filter((item) => item.category === category)
+  const categoryItems = data?.items || []
 
-  const columns: Column<MenuEngineeringItem>[] = [
+  const columns: Column<CategoryItemData>[] = [
     {
       key: 'item_name',
       header: 'Item',
       sortable: true,
     },
     {
-      key: 'quadrant',
-      header: 'Quadrant',
-      sortable: true,
-      render: (value) => {
-        const quadrant = value as keyof typeof quadrantColors
-        return (
-          <span className="flex items-center gap-1.5">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: quadrantColors[quadrant] }}
-            />
-            {quadrant}
-          </span>
-        )
-      },
-    },
-    {
-      key: 'total_quantity',
+      key: 'quantity',
       header: 'Qty',
       align: 'right',
       sortable: true,
       render: (value) => (value as number).toLocaleString(),
     },
     {
-      key: 'total_revenue',
+      key: 'revenue',
       header: 'Revenue',
       align: 'right',
       sortable: true,
       render: (value) => formatCurrency(value as number),
+    },
+    {
+      key: 'avg_price',
+      header: 'Avg Price',
+      align: 'right',
+      sortable: true,
+      render: (value) => formatCurrency(value as number),
+    },
+    {
+      key: 'percentage_of_category',
+      header: '% of Category',
+      align: 'right',
+      sortable: true,
+      render: (value) => `${(value as number).toFixed(1)}%`,
     },
   ]
 
@@ -72,7 +69,16 @@ export function CategoryItemsPanel({ category, onClose }: CategoryItemsPanelProp
         <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-navy-900">{category}</h2>
-            <p className="text-sm text-slate-500">{categoryItems.length} items</p>
+            <p className="text-sm text-slate-500">
+              {categoryItems.length} items
+              {data?.total_revenue ? ` · ${formatCurrency(data.total_revenue)} total` : ''}
+            </p>
+            {branches.length > 0 && (
+              <p className="text-xs text-navy-600 mt-1 flex items-center gap-1">
+                <Store size={12} />
+                {branches.length === 1 ? branches[0] : `${branches.length} branches selected`}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}

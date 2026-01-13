@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { formatCurrency } from '../../lib/chartConfig'
 
@@ -11,9 +11,11 @@ export interface AdvancedFilterValues {
 interface AdvancedFiltersProps {
   values: AdvancedFilterValues
   onChange: (values: AdvancedFilterValues) => void
+  /** When false, hides internal Apply/Clear buttons. Parent handles apply logic. */
+  showApplyButton?: boolean
 }
 
-export function AdvancedFilters({ values, onChange }: AdvancedFiltersProps) {
+export function AdvancedFilters({ values, onChange, showApplyButton = true }: AdvancedFiltersProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
   // Local state for inputs (before applying)
@@ -27,15 +29,48 @@ export function AdvancedFilters({ values, onChange }: AdvancedFiltersProps) {
     values.minQuantity != null ? String(values.minQuantity) : ''
   )
 
+  // Sync local state when values change from parent (e.g., on clear)
+  useEffect(() => {
+    setLocalMinPrice(values.minPrice != null ? String(values.minPrice / 100) : '')
+    setLocalMaxPrice(values.maxPrice != null ? String(values.maxPrice / 100) : '')
+    setLocalMinQty(values.minQuantity != null ? String(values.minQuantity) : '')
+  }, [values.minPrice, values.maxPrice, values.minQuantity])
+
   const hasActiveFilters =
     values.minPrice != null || values.maxPrice != null || values.minQuantity != null
 
-  const handleApply = () => {
+  // Helper to parse and call onChange
+  const notifyChange = (minP: string, maxP: string, minQ: string) => {
     onChange({
-      minPrice: localMinPrice ? Math.round(parseFloat(localMinPrice) * 100) : null,
-      maxPrice: localMaxPrice ? Math.round(parseFloat(localMaxPrice) * 100) : null,
-      minQuantity: localMinQty ? parseInt(localMinQty, 10) : null,
+      minPrice: minP ? Math.round(parseFloat(minP) * 100) : null,
+      maxPrice: maxP ? Math.round(parseFloat(maxP) * 100) : null,
+      minQuantity: minQ ? parseInt(minQ, 10) : null,
     })
+  }
+
+  const handleMinPriceChange = (value: string) => {
+    setLocalMinPrice(value)
+    if (!showApplyButton) {
+      notifyChange(value, localMaxPrice, localMinQty)
+    }
+  }
+
+  const handleMaxPriceChange = (value: string) => {
+    setLocalMaxPrice(value)
+    if (!showApplyButton) {
+      notifyChange(localMinPrice, value, localMinQty)
+    }
+  }
+
+  const handleMinQtyChange = (value: string) => {
+    setLocalMinQty(value)
+    if (!showApplyButton) {
+      notifyChange(localMinPrice, localMaxPrice, value)
+    }
+  }
+
+  const handleApply = () => {
+    notifyChange(localMinPrice, localMaxPrice, localMinQty)
   }
 
   const handleClear = () => {
@@ -102,7 +137,7 @@ export function AdvancedFilters({ values, onChange }: AdvancedFiltersProps) {
                   <input
                     type="number"
                     value={localMinPrice}
-                    onChange={(e) => setLocalMinPrice(e.target.value)}
+                    onChange={(e) => handleMinPriceChange(e.target.value)}
                     placeholder="0"
                     className="w-24 pl-7 pr-2 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
                   />
@@ -120,7 +155,7 @@ export function AdvancedFilters({ values, onChange }: AdvancedFiltersProps) {
                   <input
                     type="number"
                     value={localMaxPrice}
-                    onChange={(e) => setLocalMaxPrice(e.target.value)}
+                    onChange={(e) => handleMaxPriceChange(e.target.value)}
                     placeholder="∞"
                     className="w-24 pl-7 pr-2 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
                   />
@@ -139,30 +174,32 @@ export function AdvancedFilters({ values, onChange }: AdvancedFiltersProps) {
               <input
                 type="number"
                 value={localMinQty}
-                onChange={(e) => setLocalMinQty(e.target.value)}
+                onChange={(e) => handleMinQtyChange(e.target.value)}
                 placeholder="0"
                 className="w-20 px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
               />
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-2 ml-auto">
-              {hasActiveFilters && (
+            {/* Actions - only show when showApplyButton is true */}
+            {showApplyButton && (
+              <div className="flex items-center gap-2 ml-auto">
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleClear}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"
+                  >
+                    <X size={14} />
+                    Clear
+                  </button>
+                )}
                 <button
-                  onClick={handleClear}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"
+                  onClick={handleApply}
+                  className="px-4 py-1.5 text-sm font-medium text-white bg-navy-600 hover:bg-navy-700 rounded-md transition-colors"
                 >
-                  <X size={14} />
-                  Clear
+                  Apply
                 </button>
-              )}
-              <button
-                onClick={handleApply}
-                className="px-4 py-1.5 text-sm font-medium text-white bg-navy-600 hover:bg-navy-700 rounded-md transition-colors"
-              >
-                Apply
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
