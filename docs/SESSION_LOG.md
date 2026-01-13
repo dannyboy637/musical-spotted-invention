@@ -922,6 +922,49 @@ SELECT refresh_all_summaries('tenant-uuid-here');
 
 ---
 
+## 2026-01-13 - Bug Fixes & Small Enhancements (GitHub Issues)
+
+**Duration:** ~2 hours
+**Branches:** Multiple feature branches
+
+**What was done:**
+
+### Issue #19: Data Range Display Shows Wrong Dates
+- Branch: `fix/data-range-display-bug`
+- **Problem:** Data Range in Data Management showed only most recent import's date range instead of full data range
+- **Fix:** Added `date_range` field to backend `/data/health` endpoint that queries actual min/max dates from transactions table
+- **Files:** `backend/routes/data.py`, `frontend/src/hooks/useDataManagement.ts`, `frontend/src/modules/data-management/DataFreshnessSection.tsx`
+
+### Issue #20: Worst Day Shows Incomplete Recent Days
+- Branch: `fix/worst-day-incomplete-data`
+- **Problem:** Recent days appeared as "Worst Day" due to incomplete data from sync lag
+- **Fix:** Added warning note "May have incomplete data" when worst day is within last 2 days
+- **Files:** `frontend/src/components/ui/StatCard.tsx` (added `note` prop), `frontend/src/modules/performance/PerformanceSummary.tsx`
+
+### Issue #23: Multi-Select and Clear All for Alerts
+- Branch: `feature/alert-multi-select`
+- **Problem:** No bulk management for alerts
+- **Fix:** Added multi-select capability with:
+  - Checkbox on each active alert
+  - "Select all" toggle
+  - "Dismiss X selected" button for bulk operations
+  - Visual feedback (ring highlight on selected)
+- **Files:** `frontend/src/modules/alerts/AlertsPage.tsx`
+
+**Branches Created (all pushed):**
+- `fix/data-range-display-bug` - Ready for PR
+- `fix/worst-day-incomplete-data` - Ready for PR
+- `feature/alert-multi-select` - Ready for PR
+
+**What's next:**
+- Issue #16 (README screenshots) - Requires user to capture screenshots
+- Review & merge PRs
+
+**Blockers/Issues:**
+- None
+
+---
+
 ## Template
 
 ```markdown
