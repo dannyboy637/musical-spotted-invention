@@ -965,6 +965,98 @@ SELECT refresh_all_summaries('tenant-uuid-here');
 
 ---
 
+## 2026-01-13 - Menu Engineering Fixes & Categories Page Enhancement
+
+**Duration:** ~3 hours
+**Branch:** main (merged from feature branches)
+
+**What was done:**
+
+### Menu Engineering Fixes
+
+1. **URL Persistence for Filters**
+   - Created `useMenuEngineeringFilters.ts` hook with URL sync via `useSearchParams`
+   - Maintains draft vs applied state pattern for staged filter changes
+   - Filters persist on hard refresh and create shareable URLs
+   - URL params prefixed with `me_` to avoid collision with global filters
+
+2. **Manual Apply/Clear Pattern**
+   - Added Apply Filters button (only enabled when changes pending)
+   - Added Clear Filters button (resets to defaults: FOOD category)
+   - Status message shows "You have unapplied filter changes" or "Filters are up to date"
+   - Yellow warning color for pending changes
+
+3. **Hidden Branch Filter**
+   - Menu items are tenant-wide aggregates (no branch column in menu_items table)
+   - Branch filter was misleading - now hidden on `/menu-engineering` route
+   - Shows "Restaurant-wide view (all branches)" message instead
+   - Branch-specific analysis moved to Categories page
+
+### Categories Page Enhancement
+
+1. **Inline Detail Section** (replaces slide-out panel)
+   - Created `CategoryDetailSection.tsx` with empty state: "Click a category above for detailed breakdown"
+   - Drill-down pie chart showing top 10 items in selected category
+   - Items table with full metrics
+
+2. **Top/Bottom Performer Badges**
+   - 🔥 Top Revenue (green badge) - top 3 by revenue
+   - 📈 Top Seller (blue badge) - top 3 by quantity
+   - ⚠️ Low Revenue (amber badge) - bottom 3 by revenue
+   - 📉 Slow Mover (gray badge) - bottom 3 by quantity
+
+3. **View Mode Toggle**
+   - Single: Deep dive into one category (default)
+   - Compare: Side-by-side category comparison (up to 4)
+   - By Branch: Category performance across branches
+
+4. **Category Comparison View**
+   - Multi-select categories via checkboxes in table (max 4)
+   - Side-by-side metrics table
+   - Mini pie charts per category showing item breakdown
+
+5. **Branch Comparison View**
+   - New backend endpoint: `GET /api/analytics/category-by-branch`
+   - Shows selected category's performance at each branch
+   - Bar chart comparing revenue across branches
+   - Table with per-branch metrics
+
+### Files Created
+- `frontend/src/modules/menu-engineering/useMenuEngineeringFilters.ts`
+- `frontend/src/modules/categories/CategoryDetailSection.tsx`
+- `frontend/src/modules/categories/ViewModeToggle.tsx`
+- `frontend/src/modules/categories/CategoryComparisonView.tsx`
+- `frontend/src/modules/categories/BranchComparisonView.tsx`
+
+### Files Modified
+- `frontend/src/modules/menu-engineering/MenuEngineeringPage.tsx` - Use new filter hook
+- `frontend/src/modules/menu-engineering/AdvancedFilters.tsx` - Add `showApplyButton` prop
+- `frontend/src/components/layout/GlobalFilters.tsx` - Hide branch filter on menu engineering
+- `frontend/src/modules/categories/CategoryPage.tsx` - ViewModeToggle, multi-select, conditional rendering
+- `frontend/src/modules/categories/CategoryTable.tsx` - Multi-select support, row highlighting
+- `frontend/src/components/ui/DataTable.tsx` - Added `rowClassName` prop
+- `frontend/src/hooks/useAnalytics.ts` - Added `useCategoryItems`, `useCategoryByBranch` hooks
+- `backend/routes/analytics.py` - Added `/category-items`, `/category-by-branch` endpoints
+
+### Files Deleted
+- `frontend/src/modules/categories/CategoryItemsPanel.tsx` - Replaced by inline CategoryDetailSection
+
+**Bug Fixes:**
+- Fixed `useCategoryItems` hook - was passing query string in endpoint instead of using `extraParams`
+- Fixed TypeScript unused variable warnings with `void` statements
+- Removed invalid `formatValue` prop from BarChart component
+
+**What's next:**
+- Client testing on production
+- Collect feedback for further improvements
+
+**Blockers/Issues:**
+- None
+
+**Status:** COMPLETE
+
+---
+
 ## Template
 
 ```markdown
