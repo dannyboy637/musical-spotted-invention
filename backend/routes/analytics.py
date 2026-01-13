@@ -251,6 +251,25 @@ class CategoryItemsResponse(BaseModel):
     generated_at: str
 
 
+class BranchCategoryData(BaseModel):
+    """Performance of a category at a specific branch."""
+    branch: str
+    revenue: int  # cents
+    quantity: int
+    avg_price: float  # cents
+    item_count: int
+    percentage_of_branch: float  # What % of this branch's total is this category
+    top_item: str
+
+
+class CategoryByBranchResponse(BaseModel):
+    """Category performance across branches."""
+    category: str
+    branches: List[BranchCategoryData]
+    filters_applied: dict
+    generated_at: str
+
+
 class BundlePair(BaseModel):
     """A frequently purchased item pair."""
     item_a: str
@@ -982,6 +1001,134 @@ async def get_category_items(
         total_items=len(data.get("items", [])),
         total_revenue=data.get("total_revenue", 0),
         total_quantity=data.get("total_quantity", 0),
+        filters_applied={
+            "category": category,
+            **filters.model_dump(exclude_none=True),
+        },
+        generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+# ============================================
+# CATEGORY BY BRANCH ENDPOINT
+# ============================================
+
+@router.get("/category-by-branch", response_model=CategoryByBranchResponse)
+async def get_category_by_branch(
+    category: str = Query(..., description="Category name to analyze across branches"),
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    """
+    Get performance of a single category across all branches.
+
+    Useful for comparing how a category performs at different locations.
+    Cached for 30 seconds.
+    """
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    filters = parse_filters(start_date, end_date, None, None)
+
+    def fetch_category_by_branch():
+        # Query transactions grouped by branch
+        data = fetch_all_transactions(
+            effective_tenant_id,
+            AnalyticsFilters(
+                start_date=filters.start_date,
+                end_date=filters.end_date,
+                branches=None,  # Get all branches
+                categories=[category]
+            ),
+            "store_name, item_name, gross_revenue, quantity",
+            max_rows=100000
+        )
+
+        # Aggregate by branch
+        branch_totals = {}
+        branch_items = {}  # Track items per branch for top item
+
+        for row in data:
+            branch = row.get("store_name", "Unknown")
+            item_name = row.get("item_name", "Unknown")
+            revenue = row.get("gross_revenue", 0) or 0
+            qty = row.get("quantity", 0) or 0
+
+            if branch not in branch_totals:
+                branch_totals[branch] = {"revenue": 0, "quantity": 0, "items": set()}
+                branch_items[branch] = {}
+
+            branch_totals[branch]["revenue"] += revenue
+            branch_totals[branch]["quantity"] += qty
+            branch_totals[branch]["items"].add(item_name)
+
+            # Track item revenue for top item
+            if item_name not in branch_items[branch]:
+                branch_items[branch][item_name] = 0
+            branch_items[branch][item_name] += revenue
+
+        # Get total revenue per branch (all categories) for percentage calculation
+        # This requires a separate query
+        all_branch_data = fetch_all_transactions(
+            effective_tenant_id,
+            AnalyticsFilters(
+                start_date=filters.start_date,
+                end_date=filters.end_date,
+                branches=None,
+                categories=None
+            ),
+            "store_name, gross_revenue",
+            max_rows=200000
+        )
+
+        branch_total_revenue = {}
+        for row in all_branch_data:
+            branch = row.get("store_name", "Unknown")
+            revenue = row.get("gross_revenue", 0) or 0
+            if branch not in branch_total_revenue:
+                branch_total_revenue[branch] = 0
+            branch_total_revenue[branch] += revenue
+
+        # Build response
+        branches = []
+        for branch, totals in sorted(
+            branch_totals.items(),
+            key=lambda x: x[1]["revenue"],
+            reverse=True
+        ):
+            total_rev = branch_total_revenue.get(branch, 0)
+            pct = (totals["revenue"] / total_rev * 100) if total_rev > 0 else 0
+            avg_price = totals["revenue"] / totals["quantity"] if totals["quantity"] > 0 else 0
+
+            # Find top item
+            items_by_rev = branch_items.get(branch, {})
+            top_item = max(items_by_rev.items(), key=lambda x: x[1])[0] if items_by_rev else "N/A"
+
+            branches.append({
+                "branch": branch,
+                "revenue": totals["revenue"],
+                "quantity": totals["quantity"],
+                "avg_price": round(avg_price, 2),
+                "item_count": len(totals["items"]),
+                "percentage_of_branch": round(pct, 1),
+                "top_item": top_item,
+            })
+
+        return {"branches": branches}
+
+    data = data_cache.get_or_fetch(
+        prefix="analytics_category_by_branch",
+        fetch_fn=fetch_category_by_branch,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        category=category,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+    )
+
+    return CategoryByBranchResponse(
+        category=category,
+        branches=[BranchCategoryData(**b) for b in data.get("branches", [])],
         filters_applied={
             "category": category,
             **filters.model_dump(exclude_none=True),
