@@ -31,10 +31,10 @@ export function RecommendationCard({ recommendation }: RecommendationCardProps) 
         }
       case 'cut':
         return {
-          bg: 'bg-red-50',
-          border: 'border-red-200',
-          icon: 'text-red-600',
-          badge: 'bg-red-100 text-red-700',
+          bg: 'bg-amber-50',
+          border: 'border-amber-200',
+          icon: 'text-amber-600',
+          badge: 'bg-amber-100 text-amber-700',
         }
       case 'bundle':
         return {

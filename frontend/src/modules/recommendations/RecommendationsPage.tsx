@@ -169,12 +169,12 @@ export function RecommendationsPage() {
                 {promoteRecs.length}
               </p>
             </div>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
               <div className="flex items-center gap-2">
-                <Scissors className="w-5 h-5 text-red-600" />
-                <span className="text-sm font-medium text-red-700">To Review</span>
+                <Scissors className="w-5 h-5 text-amber-600" />
+                <span className="text-sm font-medium text-amber-700">To Review</span>
               </div>
-              <p className="text-2xl font-semibold text-red-800 mt-1">
+              <p className="text-2xl font-semibold text-amber-800 mt-1">
                 {cutRecs.length}
               </p>
             </div>
@@ -208,7 +208,7 @@ export function RecommendationsPage() {
           {cutRecs.length > 0 && (
             <div>
               <h2 className="text-lg font-semibold text-navy-900 mb-4 flex items-center gap-2">
-                <Scissors className="w-5 h-5 text-red-600" />
+                <Scissors className="w-5 h-5 text-amber-600" />
                 Items to Review
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
