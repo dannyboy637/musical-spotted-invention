@@ -151,7 +151,7 @@ export function TrendCharts() {
           data={chartData}
           xKey="label"
           lines={[
-            { key: 'revenue', name: 'Revenue', color: chartColors[0] },
+            { key: 'revenue', name: 'Revenue', color: chartColors[0], tooltip: 'Total revenue for this period' },
             ...(granularity !== 'monthly'
               ? [
                   {
@@ -159,6 +159,9 @@ export function TrendCharts() {
                     name: granularity === 'daily' ? '7-Day Avg' : '4-Week Avg',
                     color: chartColors[1],
                     strokeDasharray: '5 5',
+                    tooltip: granularity === 'daily'
+                      ? 'Rolling average of the past 7 days, smooths out daily fluctuations'
+                      : 'Rolling average of the past 4 weeks, shows the overall trend',
                   },
                 ]
               : []),
