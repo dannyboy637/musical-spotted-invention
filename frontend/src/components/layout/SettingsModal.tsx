@@ -1,4 +1,4 @@
-import { X, Bell } from 'lucide-react'
+import { X, Bell, Sun, Moon, Monitor } from 'lucide-react'
 import {
   useSettingsStore,
   getDateRangeFromPreference,
@@ -7,7 +7,8 @@ import {
   NUMBER_FORMAT_OPTIONS,
   TIME_FORMAT_OPTIONS,
   TABLE_ROWS_OPTIONS,
-  type DateRangePreference,
+  THEME_OPTIONS,
+  type DefaultDateRange,
 } from '../../stores/settingsStore'
 import { useFilterStore } from '../../stores/filterStore'
 import { useAuthStore } from '../../stores/authStore'
@@ -26,11 +27,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     numberFormat,
     timeFormat,
     tableRowsPerPage,
+    theme,
     setDefaultDateRange,
     toggleKPI,
     setNumberFormat,
     setTimeFormat,
     setTableRowsPerPage,
+    setTheme,
     resetToDefaults,
   } = useSettingsStore()
 
@@ -38,7 +41,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { profile } = useAuthStore()
 
   // Handler that updates both the setting AND applies it immediately
-  const handleDateRangeChange = (value: DateRangePreference) => {
+  const handleDateRangeChange = (value: DefaultDateRange) => {
     setDefaultDateRange(value)
     // Immediately apply the new date range to the filters
     const newRange = getDateRangeFromPreference(value)
@@ -76,6 +79,37 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
           {/* Content */}
           <div className="px-6 py-4 space-y-6">
+            {/* Theme */}
+            <section>
+              <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Theme</h3>
+              <div className="flex flex-wrap gap-2">
+                {THEME_OPTIONS.map((option) => {
+                  const Icon = option.value === 'system' ? Monitor : option.value === 'light' ? Sun : Moon
+                  return (
+                    <label
+                      key={option.value}
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${
+                        theme === option.value
+                          ? 'bg-navy-50 border-navy-300 text-navy-700 dark:bg-navy-900/50 dark:border-navy-600 dark:text-navy-200'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="theme"
+                        value={option.value}
+                        checked={theme === option.value}
+                        onChange={() => setTheme(option.value)}
+                        className="sr-only"
+                      />
+                      <Icon size={16} />
+                      <span className="text-sm">{option.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </section>
+
             {/* Default Date Range */}
             <section>
               <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Default Date Range</h3>

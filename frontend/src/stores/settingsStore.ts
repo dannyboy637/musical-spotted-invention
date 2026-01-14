@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware'
 export type DefaultDateRange = 'today' | '7days' | '30days' | '90days' | 'all'
 export type NumberFormat = 'us' | 'eu' | 'fr'
 export type TimeFormat = '12hr' | '24hr'
+export type ThemePreference = 'system' | 'light' | 'dark'
 
 export interface KPIOption {
   id: string
@@ -40,6 +41,12 @@ export const TIME_FORMAT_OPTIONS: { value: TimeFormat; label: string; example: s
   { value: '12hr', label: '12-hour', example: '6:00 PM' },
 ]
 
+export const THEME_OPTIONS: { value: ThemePreference; label: string; description: string }[] = [
+  { value: 'system', label: 'System', description: 'Match device settings' },
+  { value: 'light', label: 'Light', description: 'Always light mode' },
+  { value: 'dark', label: 'Dark', description: 'Always dark mode' },
+]
+
 interface SettingsState {
   // Settings values
   defaultDateRange: DefaultDateRange
@@ -47,6 +54,7 @@ interface SettingsState {
   numberFormat: NumberFormat
   tableRowsPerPage: number
   timeFormat: TimeFormat
+  theme: ThemePreference
 
   // Actions
   setDefaultDateRange: (range: DefaultDateRange) => void
@@ -55,6 +63,7 @@ interface SettingsState {
   setNumberFormat: (format: NumberFormat) => void
   setTableRowsPerPage: (rows: number) => void
   setTimeFormat: (format: TimeFormat) => void
+  setTheme: (theme: ThemePreference) => void
   resetToDefaults: () => void
 }
 
@@ -64,6 +73,7 @@ export const DEFAULT_SETTINGS = {
   numberFormat: 'us' as NumberFormat,
   tableRowsPerPage: 25,
   timeFormat: '24hr' as TimeFormat,
+  theme: 'light' as ThemePreference,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -95,6 +105,8 @@ export const useSettingsStore = create<SettingsState>()(
       setTableRowsPerPage: (rows) => set({ tableRowsPerPage: rows }),
 
       setTimeFormat: (format) => set({ timeFormat: format }),
+
+      setTheme: (theme) => set({ theme }),
 
       resetToDefaults: () => set(DEFAULT_SETTINGS),
     }),

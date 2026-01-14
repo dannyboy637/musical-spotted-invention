@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { queryClient } from './lib/queryClient'
 import { useAuthStore } from './stores/authStore'
+import { useTheme } from './hooks/useTheme'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ProtectedRoute } from './components/layout/ProtectedRoute'
 import { PublicRoute } from './components/layout/PublicRoute'
@@ -37,13 +38,16 @@ function PageLoader() {
 function App() {
   const { initialize, isInitialized } = useAuthStore()
 
+  // Sync theme preference to document
+  useTheme()
+
   useEffect(() => {
     initialize()
   }, [initialize])
 
   if (!isInitialized) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
         <Spinner size="lg" />
       </div>
     )
