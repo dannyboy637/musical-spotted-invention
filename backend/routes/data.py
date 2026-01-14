@@ -950,6 +950,7 @@ async def data_health_check(
     health = {
         "tenant_id": user.tenant_id,
         "counts": {},
+        "date_range": {"start": None, "end": None},
         "status": "ok",
     }
 
@@ -958,17 +959,29 @@ async def data_health_check(
             # Specific tenant counts
             txn_result = supabase.table("transactions").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
             menu_result = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
+            # Get date range for tenant
+            date_range_result = supabase.table("transactions").select("date").eq("tenant_id", user.tenant_id).order("date", desc=False).limit(1).execute()
+            date_range_end_result = supabase.table("transactions").select("date").eq("tenant_id", user.tenant_id).order("date", desc=True).limit(1).execute()
         elif user.role == "operator":
             # Operators without tenant see all counts
             txn_result = supabase.table("transactions").select("id", count="exact").limit(1).execute()
             menu_result = supabase.table("menu_items").select("id", count="exact").limit(1).execute()
+            # Get date range across all tenants
+            date_range_result = supabase.table("transactions").select("date").order("date", desc=False).limit(1).execute()
+            date_range_end_result = supabase.table("transactions").select("date").order("date", desc=True).limit(1).execute()
             health["note"] = "Showing aggregate counts (no tenant selected)"
         else:
             # Non-operators without tenant
-            return {"tenant_id": None, "counts": {"transactions": 0, "menu_items": 0}, "status": "no_tenant"}
+            return {"tenant_id": None, "counts": {"transactions": 0, "menu_items": 0}, "date_range": {"start": None, "end": None}, "status": "no_tenant"}
 
         health["counts"]["transactions"] = txn_result.count or 0
         health["counts"]["menu_items"] = menu_result.count or 0
+
+        # Extract date range
+        if date_range_result.data and len(date_range_result.data) > 0:
+            health["date_range"]["start"] = date_range_result.data[0]["date"]
+        if date_range_end_result.data and len(date_range_end_result.data) > 0:
+            health["date_range"]["end"] = date_range_end_result.data[0]["date"]
     except Exception:
         health["counts"]["transactions"] = 0
         health["counts"]["menu_items"] = 0

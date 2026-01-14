@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
-import { X, ChevronDown, ChevronUp, Filter } from 'lucide-react'
+import { X, ChevronDown, ChevronUp, Filter, Info } from 'lucide-react'
 import { DateRangePicker } from '../ui/DateRangePicker'
 import { MultiSelect } from '../ui/MultiSelect'
 import {
@@ -14,10 +14,6 @@ export function GlobalFilters() {
   const [isExpanded, setIsExpanded] = useState(false)
   const location = useLocation()
 
-  // Hide filters that are irrelevant to the current page
-  const showBranchFilter = location.pathname !== '/branches'
-  const showCategoryFilter = location.pathname !== '/categories'
-
   const {
     dateRange,
     branches,
@@ -29,6 +25,11 @@ export function GlobalFilters() {
     setCategories,
     clearFilters,
   } = useFilterStore()
+
+  // Hide filters that are irrelevant to the current page
+  const isMenuEngineering = location.pathname === '/menu-engineering'
+  const showBranchFilter = !isMenuEngineering && location.pathname !== '/branches'
+  const showCategoryFilter = location.pathname !== '/categories'
 
   const hasActiveFilters = dateRange !== null || branches.length > 0 || categories.length > 0
   const activeFilterCount = (dateRange ? 1 : 0) + (branches.length > 0 ? 1 : 0) + (categories.length > 0 ? 1 : 0)
@@ -95,8 +96,8 @@ export function GlobalFilters() {
             <DateRangePicker value={dateRange} onChange={setDateRange} />
           </div>
 
-          {/* Branches - hidden on Branches page */}
-          {showBranchFilter && (
+          {/* Branches - hidden on menu engineering and branches pages */}
+          {showBranchFilter ? (
             <div className="w-full sm:w-auto min-w-[180px]">
               <MultiSelect
                 label="Branches"
@@ -106,7 +107,12 @@ export function GlobalFilters() {
                 placeholder="All branches"
               />
             </div>
-          )}
+          ) : isMenuEngineering ? (
+            <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-slate-500 bg-slate-50 rounded-md border border-slate-200">
+              <Info size={14} />
+              <span>Restaurant-wide view (all branches)</span>
+            </div>
+          ) : null}
 
           {/* Categories - hidden on Categories page */}
           {showCategoryFilter && (
