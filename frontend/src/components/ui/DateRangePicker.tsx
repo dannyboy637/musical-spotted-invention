@@ -10,7 +10,8 @@ interface DateRangePickerProps {
   onChange: (range: { start: Date; end: Date } | null) => void
 }
 
-const presets = [
+const presets: { label: string; getValue: () => { start: Date; end: Date } | null }[] = [
+  { label: 'All Time', getValue: () => null },
   { label: 'Last 7 days', getValue: () => ({ start: subDays(new Date(), 6), end: new Date() }) },
   { label: 'Last 30 days', getValue: () => ({ start: subDays(new Date(), 29), end: new Date() }) },
   { label: 'This month', getValue: () => ({ start: startOfMonth(new Date()), end: new Date() }) },
@@ -54,10 +55,15 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
     }
   }
 
-  const handlePreset = (getValue: () => { start: Date; end: Date }) => {
-    const { start, end } = getValue()
-    setRange({ from: start, to: end })
-    onChange({ start, end })
+  const handlePreset = (getValue: () => { start: Date; end: Date } | null) => {
+    const result = getValue()
+    if (result === null) {
+      setRange(undefined)
+      onChange(null)
+    } else {
+      setRange({ from: result.start, to: result.end })
+      onChange(result)
+    }
     setIsOpen(false)
   }
 
