@@ -1,9 +1,12 @@
 """
 Alerts API routes.
 Provides endpoints for viewing alerts, dismissing them, and managing alert settings.
+
+Alerts are designed for recent, actionable notifications (last 7 days).
+For historical movement analysis, use the /api/analytics/movements endpoints.
 """
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 
@@ -12,6 +15,9 @@ from db.supabase import supabase
 from utils.cache import data_cache
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+
+# Alerts are limited to recent notifications only (7 days)
+ALERTS_WINDOW_DAYS = 7
 
 
 # ============================================
@@ -113,14 +119,23 @@ async def list_alerts(
 
     Returns alerts sorted by created_at descending (newest first).
     Active alerts (not dismissed) appear before dismissed alerts.
+
+    NOTE: Alerts are limited to the last 7 days only (ALERTS_WINDOW_DAYS).
+    For historical movement analysis, use /api/analytics/movements endpoints.
     Cached for 30 seconds.
     """
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+
+    # Calculate the cutoff date for the 7-day window
+    cutoff_date = (datetime.utcnow() - timedelta(days=ALERTS_WINDOW_DAYS)).isoformat()
 
     def fetch_alerts():
         # Build query
         query = supabase.table("alerts").select("*", count="exact")
         query = query.eq("tenant_id", effective_tenant_id)
+
+        # Always filter to last 7 days - alerts are for recent activity only
+        query = query.gte("created_at", cutoff_date)
 
         if active_only:
             query = query.is_("dismissed_at", "null")
@@ -136,9 +151,10 @@ async def list_alerts(
 
         result = query.execute()
 
-        # Get active count separately
+        # Get active count separately (also within 7-day window)
         active_result = supabase.table("alerts").select("id", count="exact") \
             .eq("tenant_id", effective_tenant_id) \
+            .gte("created_at", cutoff_date) \
             .is_("dismissed_at", "null") \
             .execute()
 

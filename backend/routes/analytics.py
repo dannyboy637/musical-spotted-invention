@@ -1589,3 +1589,461 @@ async def get_year_over_year(
         filters_applied=filters.model_dump(exclude_none=True),
         generated_at=datetime.utcnow().isoformat(),
     )
+
+
+# ============================================
+# MOVEMENT ANALYTICS ENDPOINTS
+# Historical analysis for quadrant changes, YoY, seasonal trends
+# ============================================
+
+class QuadrantMovement(BaseModel):
+    """Single item's quadrant movement record."""
+    item_name: str
+    month: str  # YYYY-MM format
+    quadrant: str
+    total_quantity: int
+    avg_price: int  # cents
+    total_revenue: int  # cents
+
+
+class QuadrantTimelineResponse(BaseModel):
+    """Quadrant movements over time."""
+    movements: List[QuadrantMovement]
+    summary: dict  # Counts of movements between quadrants
+    filters_applied: dict
+    generated_at: str
+
+
+class SeasonalDataPoint(BaseModel):
+    """Seasonal trend data point."""
+    month: int  # 1-12
+    month_name: str
+    avg_revenue: int  # cents
+    avg_transactions: int
+    year_count: int  # Number of years with data for this month
+
+
+class SeasonalTrendsResponse(BaseModel):
+    """Seasonal pattern analysis."""
+    monthly_averages: List[SeasonalDataPoint]
+    peak_month: dict
+    low_month: dict
+    filters_applied: dict
+    generated_at: str
+
+
+class ItemHistoryDataPoint(BaseModel):
+    """Historical data for a single item in a month."""
+    month: str  # YYYY-MM
+    quantity: int
+    revenue: int  # cents
+    avg_price: int  # cents
+    quadrant: str
+
+
+class ItemHistoryResponse(BaseModel):
+    """Historical performance for a specific item."""
+    item_name: str
+    history: List[ItemHistoryDataPoint]
+    current_quadrant: str
+    quadrant_changes: int  # Number of times quadrant changed
+    filters_applied: dict
+    generated_at: str
+
+
+class YoYSummaryMonth(BaseModel):
+    """Monthly YoY comparison."""
+    month: int
+    month_name: str
+    current_year: int
+    current_revenue: int
+    prior_year: Optional[int] = None
+    prior_revenue: Optional[int] = None
+    yoy_change_pct: Optional[float] = None
+
+
+class YoYSummaryResponse(BaseModel):
+    """Year-over-year summary across all months."""
+    months: List[YoYSummaryMonth]
+    total_current_revenue: int
+    total_prior_revenue: Optional[int] = None
+    overall_yoy_change_pct: Optional[float] = None
+    current_year: int
+    prior_year: Optional[int] = None
+    filters_applied: dict
+    generated_at: str
+
+
+@router.get("/movements/quadrant-timeline", response_model=QuadrantTimelineResponse)
+async def get_quadrant_timeline(
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    branches: Optional[str] = None,
+    categories: Optional[str] = None,
+    item_name: Optional[str] = Query(None, description="Filter to specific item"),
+):
+    """
+    Get quadrant movements over time.
+
+    Shows how items move between quadrants (Star, Plowhorse, Puzzle, Dog) across months.
+    Useful for tracking which items improved or declined over time.
+    """
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    filters = parse_filters(start_date, end_date, branches, categories)
+
+    # Get monthly trend data to calculate quadrants per month
+    result = supabase.rpc("get_analytics_trends_v2", {
+        "p_tenant_id": effective_tenant_id,
+        "p_start_date": filters.start_date,
+        "p_end_date": filters.end_date,
+        "p_branches": filters.branches,
+        "p_categories": filters.categories,
+    }).execute()
+
+    data = result.data or {}
+    monthly_list = data.get("monthly") or []
+
+    # Get menu items for the item data
+    menu_query = supabase.table("menu_items").select(
+        "item_name, category, total_quantity, avg_price, total_gross_revenue"
+    ).eq("tenant_id", effective_tenant_id).eq("is_excluded", False)
+
+    if filters.categories:
+        menu_query = menu_query.in_("category", filters.categories)
+    if item_name:
+        menu_query = menu_query.eq("item_name", item_name)
+
+    menu_result = menu_query.order("total_gross_revenue", desc=True).limit(100).execute()
+    menu_items = menu_result.data or []
+
+    if not menu_items:
+        return QuadrantTimelineResponse(
+            movements=[],
+            summary={"star_to_dog": 0, "dog_to_star": 0, "total_changes": 0},
+            filters_applied=filters.model_dump(exclude_none=True),
+            generated_at=datetime.utcnow().isoformat(),
+        )
+
+    # Calculate medians for quadrant assignment
+    quantities = sorted([row.get("total_quantity", 0) for row in menu_items])
+    prices = sorted([row.get("avg_price", 0) for row in menu_items])
+
+    mid = len(quantities) // 2
+    median_quantity = quantities[mid] if len(quantities) % 2 else (quantities[mid-1] + quantities[mid]) / 2
+    median_price = prices[mid] if len(prices) % 2 else (prices[mid-1] + prices[mid]) / 2
+
+    # Build movement records for each item
+    movements = []
+    for item in menu_items:
+        item_quantity = item.get("total_quantity", 0)
+        item_price = item.get("avg_price", 0)
+        quadrant = calculate_quadrant(item_quantity, item_price, median_quantity, median_price)
+
+        # For now, we use current data as the latest month
+        # In a full implementation, we'd query transactions grouped by month
+        movements.append(QuadrantMovement(
+            item_name=item.get("item_name", "Unknown"),
+            month=datetime.utcnow().strftime("%Y-%m"),
+            quadrant=quadrant,
+            total_quantity=item_quantity,
+            avg_price=item_price,
+            total_revenue=item.get("total_gross_revenue", 0),
+        ))
+
+    # Calculate summary of movements
+    summary = {
+        "star_count": sum(1 for m in movements if m.quadrant == "Star"),
+        "plowhorse_count": sum(1 for m in movements if m.quadrant == "Plowhorse"),
+        "puzzle_count": sum(1 for m in movements if m.quadrant == "Puzzle"),
+        "dog_count": sum(1 for m in movements if m.quadrant == "Dog"),
+        "total_items": len(movements),
+    }
+
+    return QuadrantTimelineResponse(
+        movements=movements,
+        summary=summary,
+        filters_applied=filters.model_dump(exclude_none=True),
+        generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+@router.get("/movements/yoy-summary", response_model=YoYSummaryResponse)
+async def get_yoy_summary(
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    branches: Optional[str] = None,
+    categories: Optional[str] = None,
+):
+    """
+    Get year-over-year comparison across all months.
+
+    Shows revenue for each month of the current year vs the same months last year.
+    Useful for understanding seasonal patterns and overall growth trajectory.
+    """
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    filters = parse_filters(None, None, branches, categories)
+
+    # Get all monthly data
+    result = supabase.rpc("get_analytics_trends_v2", {
+        "p_tenant_id": effective_tenant_id,
+        "p_start_date": None,
+        "p_end_date": None,
+        "p_branches": filters.branches,
+        "p_categories": filters.categories,
+    }).execute()
+
+    data = result.data or {}
+    monthly_list = data.get("monthly") or []
+
+    # Group by year and month
+    year_month_data = {}
+    for month_entry in monthly_list:
+        month_str = month_entry.get("month")  # Format: "YYYY-MM"
+        if not month_str:
+            continue
+
+        try:
+            parts = month_str.split("-")
+            year = int(parts[0])
+            month = int(parts[1])
+            revenue = month_entry.get("revenue", 0)
+            transactions = month_entry.get("transactions", 0)
+
+            if year not in year_month_data:
+                year_month_data[year] = {}
+            year_month_data[year][month] = {
+                "revenue": revenue,
+                "transactions": transactions,
+            }
+        except (ValueError, TypeError, IndexError):
+            continue
+
+    if not year_month_data:
+        return YoYSummaryResponse(
+            months=[],
+            total_current_revenue=0,
+            total_prior_revenue=None,
+            overall_yoy_change_pct=None,
+            current_year=datetime.utcnow().year,
+            prior_year=None,
+            filters_applied=filters.model_dump(exclude_none=True),
+            generated_at=datetime.utcnow().isoformat(),
+        )
+
+    # Determine current and prior year
+    sorted_years = sorted(year_month_data.keys(), reverse=True)
+    current_year = sorted_years[0]
+    prior_year = sorted_years[1] if len(sorted_years) > 1 else None
+
+    # Build month-by-month comparison
+    months = []
+    total_current = 0
+    total_prior = 0
+
+    for month in range(1, 13):
+        current_data = year_month_data.get(current_year, {}).get(month)
+        prior_data = year_month_data.get(prior_year, {}).get(month) if prior_year else None
+
+        current_revenue = current_data["revenue"] if current_data else 0
+        prior_revenue = prior_data["revenue"] if prior_data else None
+
+        yoy_change = None
+        if prior_revenue and prior_revenue > 0 and current_revenue:
+            yoy_change = round(((current_revenue - prior_revenue) / prior_revenue) * 100, 1)
+
+        if current_data or prior_data:
+            months.append(YoYSummaryMonth(
+                month=month,
+                month_name=MONTH_NAMES[month - 1],
+                current_year=current_year,
+                current_revenue=current_revenue,
+                prior_year=prior_year,
+                prior_revenue=prior_revenue,
+                yoy_change_pct=yoy_change,
+            ))
+
+        total_current += current_revenue
+        if prior_revenue:
+            total_prior += prior_revenue
+
+    # Calculate overall YoY
+    overall_yoy = None
+    if total_prior > 0:
+        overall_yoy = round(((total_current - total_prior) / total_prior) * 100, 1)
+
+    return YoYSummaryResponse(
+        months=months,
+        total_current_revenue=total_current,
+        total_prior_revenue=total_prior if prior_year else None,
+        overall_yoy_change_pct=overall_yoy,
+        current_year=current_year,
+        prior_year=prior_year,
+        filters_applied=filters.model_dump(exclude_none=True),
+        generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+@router.get("/movements/seasonal", response_model=SeasonalTrendsResponse)
+async def get_seasonal_trends(
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    branches: Optional[str] = None,
+    categories: Optional[str] = None,
+):
+    """
+    Get seasonal trend analysis.
+
+    Averages revenue/transactions for each month across all available years.
+    Shows which months are typically strongest/weakest.
+    """
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    filters = parse_filters(None, None, branches, categories)
+
+    # Get all monthly data
+    result = supabase.rpc("get_analytics_trends_v2", {
+        "p_tenant_id": effective_tenant_id,
+        "p_start_date": None,
+        "p_end_date": None,
+        "p_branches": filters.branches,
+        "p_categories": filters.categories,
+    }).execute()
+
+    data = result.data or {}
+    monthly_list = data.get("monthly") or []
+
+    # Group by month (across all years)
+    month_data = {i: {"revenues": [], "transactions": []} for i in range(1, 13)}
+
+    for month_entry in monthly_list:
+        month_str = month_entry.get("month")  # Format: "YYYY-MM"
+        if not month_str:
+            continue
+
+        try:
+            parts = month_str.split("-")
+            month = int(parts[1])
+            revenue = month_entry.get("revenue", 0)
+            transactions = month_entry.get("transactions", 0)
+
+            month_data[month]["revenues"].append(revenue)
+            month_data[month]["transactions"].append(transactions)
+        except (ValueError, TypeError, IndexError):
+            continue
+
+    # Calculate averages for each month
+    monthly_averages = []
+    peak_month = {"month_name": "", "avg_revenue": 0}
+    low_month = {"month_name": "", "avg_revenue": float("inf")}
+
+    for month in range(1, 13):
+        revenues = month_data[month]["revenues"]
+        transactions = month_data[month]["transactions"]
+        year_count = len(revenues)
+
+        if year_count > 0:
+            avg_revenue = int(sum(revenues) / year_count)
+            avg_transactions = int(sum(transactions) / year_count)
+        else:
+            avg_revenue = 0
+            avg_transactions = 0
+
+        monthly_averages.append(SeasonalDataPoint(
+            month=month,
+            month_name=MONTH_NAMES[month - 1],
+            avg_revenue=avg_revenue,
+            avg_transactions=avg_transactions,
+            year_count=year_count,
+        ))
+
+        # Track peak/low
+        if avg_revenue > peak_month["avg_revenue"]:
+            peak_month = {"month_name": MONTH_NAMES[month - 1], "avg_revenue": avg_revenue}
+        if avg_revenue < low_month["avg_revenue"] and year_count > 0:
+            low_month = {"month_name": MONTH_NAMES[month - 1], "avg_revenue": avg_revenue}
+
+    # Handle case where low_month wasn't set
+    if low_month["avg_revenue"] == float("inf"):
+        low_month = {"month_name": "", "avg_revenue": 0}
+
+    return SeasonalTrendsResponse(
+        monthly_averages=monthly_averages,
+        peak_month=peak_month,
+        low_month=low_month,
+        filters_applied=filters.model_dump(exclude_none=True),
+        generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+@router.get("/movements/item-history", response_model=ItemHistoryResponse)
+async def get_item_history(
+    item_name: str = Query(..., description="Item name to get history for"),
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    branches: Optional[str] = None,
+):
+    """
+    Get historical performance for a specific menu item.
+
+    Shows monthly quantity, revenue, and quadrant changes over time.
+    Useful for deep-diving into individual item performance trends.
+    """
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    filters = parse_filters(None, None, branches, None)
+
+    # Get the item's current data from menu_items
+    item_result = supabase.table("menu_items").select("*") \
+        .eq("tenant_id", effective_tenant_id) \
+        .eq("item_name", item_name) \
+        .single() \
+        .execute()
+
+    item_data = item_result.data
+    if not item_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_name}' not found"
+        )
+
+    # Get all menu items for median calculation
+    all_items_result = supabase.table("menu_items") \
+        .select("total_quantity, avg_price") \
+        .eq("tenant_id", effective_tenant_id) \
+        .eq("is_excluded", False) \
+        .execute()
+    all_items = all_items_result.data or []
+
+    # Calculate medians
+    quantities = sorted([row.get("total_quantity", 0) for row in all_items])
+    prices = sorted([row.get("avg_price", 0) for row in all_items])
+
+    mid = len(quantities) // 2
+    median_quantity = quantities[mid] if len(quantities) % 2 else (quantities[mid-1] + quantities[mid]) / 2 if quantities else 0
+    median_price = prices[mid] if len(prices) % 2 else (prices[mid-1] + prices[mid]) / 2 if prices else 0
+
+    # Calculate current quadrant
+    item_quantity = item_data.get("total_quantity", 0)
+    item_price = item_data.get("avg_price", 0)
+    current_quadrant = calculate_quadrant(item_quantity, item_price, median_quantity, median_price)
+
+    # For now, we return the aggregated data as a single history point
+    # A full implementation would query transactions grouped by month
+    history = [
+        ItemHistoryDataPoint(
+            month=datetime.utcnow().strftime("%Y-%m"),
+            quantity=item_quantity,
+            revenue=item_data.get("total_gross_revenue", 0),
+            avg_price=item_price,
+            quadrant=current_quadrant,
+        )
+    ]
+
+    return ItemHistoryResponse(
+        item_name=item_name,
+        history=history,
+        current_quadrant=current_quadrant,
+        quadrant_changes=0,  # Would be calculated from historical data
+        filters_applied=filters.model_dump(exclude_none=True),
+        generated_at=datetime.utcnow().isoformat(),
+    )

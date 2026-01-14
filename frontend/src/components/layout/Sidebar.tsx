@@ -16,6 +16,7 @@ import {
   ChevronRight,
   X,
   Gauge,
+  History,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
@@ -29,6 +30,7 @@ const navItems = [
   { to: '/categories', icon: FolderOpen, label: 'Categories' },
   { to: '/branches', icon: GitBranch, label: 'Branches' },
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
+  { to: '/movements', icon: History, label: 'Movements' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/costs', icon: DollarSign, label: 'Costs', ownerOnly: true },
   { to: '/data-management', icon: Database, label: 'Data', ownerOnly: true },

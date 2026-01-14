@@ -520,3 +520,152 @@ export function useRegenerateMenuItems() {
     },
   })
 }
+
+
+// ============================================
+// MOVEMENT ANALYTICS HOOKS
+// Historical analysis for quadrant changes, YoY, seasonal trends
+// ============================================
+
+export interface QuadrantMovement {
+  item_name: string
+  month: string
+  quadrant: 'Star' | 'Plowhorse' | 'Puzzle' | 'Dog'
+  total_quantity: number
+  avg_price: number
+  total_revenue: number
+}
+
+export interface QuadrantTimelineData {
+  movements: QuadrantMovement[]
+  summary: {
+    star_count: number
+    plowhorse_count: number
+    puzzle_count: number
+    dog_count: number
+    total_items: number
+  }
+  filters_applied: Record<string, unknown>
+  generated_at: string
+}
+
+export interface SeasonalDataPoint {
+  month: number
+  month_name: string
+  avg_revenue: number
+  avg_transactions: number
+  year_count: number
+}
+
+export interface SeasonalTrendsData {
+  monthly_averages: SeasonalDataPoint[]
+  peak_month: { month_name: string; avg_revenue: number }
+  low_month: { month_name: string; avg_revenue: number }
+  filters_applied: Record<string, unknown>
+  generated_at: string
+}
+
+export interface ItemHistoryDataPoint {
+  month: string
+  quantity: number
+  revenue: number
+  avg_price: number
+  quadrant: string
+}
+
+export interface ItemHistoryData {
+  item_name: string
+  history: ItemHistoryDataPoint[]
+  current_quadrant: string
+  quadrant_changes: number
+  filters_applied: Record<string, unknown>
+  generated_at: string
+}
+
+export interface YoYSummaryMonth {
+  month: number
+  month_name: string
+  current_year: number
+  current_revenue: number
+  prior_year: number | null
+  prior_revenue: number | null
+  yoy_change_pct: number | null
+}
+
+export interface YoYSummaryData {
+  months: YoYSummaryMonth[]
+  total_current_revenue: number
+  total_prior_revenue: number | null
+  overall_yoy_change_pct: number | null
+  current_year: number
+  prior_year: number | null
+  filters_applied: Record<string, unknown>
+  generated_at: string
+}
+
+// Helper for movement analytics that don't use global date filters
+function useMovementQuery<T>(
+  endpoint: string,
+  queryKeyBase: string,
+  options?: {
+    extraParams?: Record<string, string | number | boolean>
+    enabled?: boolean
+  }
+) {
+  const { session } = useAuthStore()
+  const { activeTenant } = useTenantStore()
+  const { branches, categories } = useFilterStore()
+
+  const accessToken = session?.access_token
+  const tenantId = activeTenant?.id
+
+  return useQuery<T>({
+    queryKey: [queryKeyBase, tenantId, branches, categories, options?.extraParams],
+    queryFn: async () => {
+      if (!accessToken) {
+        throw new Error('No access token')
+      }
+
+      const params: Record<string, string | number | boolean> = {}
+      if (tenantId) params.tenant_id = tenantId
+      if (branches.length > 0) params.branches = branches.join(',')
+      if (categories.length > 0) params.categories = categories.join(',')
+      if (options?.extraParams) {
+        Object.assign(params, options.extraParams)
+      }
+
+      const response = await axios.get<T>(`${API_URL}/api/analytics/${endpoint}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params,
+      })
+
+      return response.data
+    },
+    enabled: !!accessToken && (options?.enabled ?? true),
+  })
+}
+
+export function useQuadrantTimeline(options?: { itemName?: string }) {
+  return useAnalyticsQuery<QuadrantTimelineData>('movements/quadrant-timeline', 'movements-quadrant-timeline', {
+    extraParams: options?.itemName ? { item_name: options.itemName } : undefined,
+  })
+}
+
+export function useYoYSummary() {
+  return useMovementQuery<YoYSummaryData>('movements/yoy-summary', 'movements-yoy-summary')
+}
+
+export function useSeasonalTrends() {
+  return useMovementQuery<SeasonalTrendsData>('movements/seasonal', 'movements-seasonal')
+}
+
+export function useItemHistory(itemName: string | null) {
+  return useMovementQuery<ItemHistoryData>(
+    'movements/item-history',
+    `movements-item-history-${itemName}`,
+    {
+      enabled: !!itemName,
+      extraParams: itemName ? { item_name: itemName } : undefined,
+    }
+  )
+}
