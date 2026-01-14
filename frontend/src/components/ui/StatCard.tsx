@@ -5,6 +5,7 @@ interface StatCardProps {
   note?: string
   color?: 'default' | 'success' | 'warning' | 'danger' | 'info'
   loading?: boolean
+  onClick?: () => void
 }
 
 export function StatCard({
@@ -14,6 +15,7 @@ export function StatCard({
   note,
   color = 'default',
   loading = false,
+  onClick,
 }: StatCardProps) {
   const getColorClasses = () => {
     switch (color) {
@@ -57,7 +59,15 @@ export function StatCard({
   }
 
   return (
-    <div className={`border rounded-lg p-4 ${getColorClasses()}`}>
+    <div
+      className={`border rounded-lg p-4 ${getColorClasses()} ${
+        onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''
+      }`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
+    >
       <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>
       <p className={`mt-1 text-xl font-semibold ${getValueColor()}`}>{value}</p>
       {sublabel && <p className="mt-1 text-xs text-slate-400">{sublabel}</p>}

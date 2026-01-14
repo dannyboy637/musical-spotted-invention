@@ -199,8 +199,22 @@ export function LineChart({
             name={line.name || line.key}
             stroke={line.color || getChartColor(index)}
             strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4, strokeWidth: 0 }}
+            dot={onDataPointClick ? { r: 3, strokeWidth: 0, fill: line.color || getChartColor(index) } : false}
+            activeDot={{
+              r: 6,
+              strokeWidth: 0,
+              cursor: onDataPointClick ? 'pointer' : 'default',
+              onClick: onDataPointClick
+                ? (_, payload) => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const p = payload as any;
+                    if (p?.payload) {
+                      const dataIndex = data.findIndex((d) => d[xKey] === p.payload[xKey]);
+                      onDataPointClick(p.payload, dataIndex);
+                    }
+                  }
+                : undefined,
+            }}
             strokeDasharray={line.strokeDasharray}
           />
         ))}
