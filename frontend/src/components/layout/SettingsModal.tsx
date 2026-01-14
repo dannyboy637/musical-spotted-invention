@@ -1,12 +1,15 @@
 import { X, Bell } from 'lucide-react'
 import {
   useSettingsStore,
+  getDateRangeFromPreference,
   AVAILABLE_KPIS,
   DATE_RANGE_OPTIONS,
   NUMBER_FORMAT_OPTIONS,
   TIME_FORMAT_OPTIONS,
   TABLE_ROWS_OPTIONS,
+  type DateRangePreference,
 } from '../../stores/settingsStore'
+import { useFilterStore } from '../../stores/filterStore'
 import { useAuthStore } from '../../stores/authStore'
 import { useAlertSettings, useUpdateAlertSettings } from '../../hooks/useAlerts'
 import { Spinner } from '../ui/Spinner'
@@ -31,7 +34,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     resetToDefaults,
   } = useSettingsStore()
 
+  const { setDateRange } = useFilterStore()
   const { profile } = useAuthStore()
+
+  // Handler that updates both the setting AND applies it immediately
+  const handleDateRangeChange = (value: DateRangePreference) => {
+    setDefaultDateRange(value)
+    // Immediately apply the new date range to the filters
+    const newRange = getDateRangeFromPreference(value)
+    setDateRange(newRange)
+  }
   const isOwnerOrOperator = profile?.role === 'owner' || profile?.role === 'operator'
 
   // Alert settings (only loaded for owner/operator)
@@ -82,7 +94,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       name="dateRange"
                       value={option.value}
                       checked={defaultDateRange === option.value}
-                      onChange={() => setDefaultDateRange(option.value)}
+                      onChange={() => handleDateRangeChange(option.value)}
                       className="sr-only"
                     />
                     <span className="text-sm">{option.label}</span>
