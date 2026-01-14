@@ -4,13 +4,23 @@ import type { Column } from '../../components/ui/DataTable'
 import { useCategories } from '../../hooks/useAnalytics'
 import type { CategoryData } from '../../hooks/useAnalytics'
 import { formatCurrency, formatPercent } from '../../lib/chartConfig'
+import type { ViewMode } from './CategoryPage'
 
 interface CategoryTableProps {
   selectedMacro: string | null
   onCategoryClick: (category: CategoryData) => void
+  selectedCategories?: string[]
+  viewMode?: ViewMode
 }
 
-export function CategoryTable({ selectedMacro, onCategoryClick }: CategoryTableProps) {
+export function CategoryTable({
+  selectedMacro,
+  onCategoryClick,
+  selectedCategories = [],
+  viewMode = 'single',
+}: CategoryTableProps) {
+  // Silence unused warning - will be used for checkbox mode
+  void viewMode
   const { data, isLoading, error, refetch } = useCategories()
 
   // Filter by selected macro
@@ -82,6 +92,11 @@ export function CategoryTable({ selectedMacro, onCategoryClick }: CategoryTableP
           keyField="category"
           onRowClick={onCategoryClick}
           compact
+          rowClassName={(row) =>
+            selectedCategories.includes(row.category)
+              ? 'bg-navy-50 border-l-2 border-l-navy-500'
+              : ''
+          }
         />
       </div>
     </ChartContainer>
