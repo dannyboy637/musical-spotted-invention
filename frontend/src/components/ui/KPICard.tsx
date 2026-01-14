@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 interface KPICardProps {
   title: string
   value: string
+  subtitle?: string
   change?: number | null
   changeLabel?: string
   icon?: LucideIcon
@@ -13,6 +14,7 @@ interface KPICardProps {
 export function KPICard({
   title,
   value,
+  subtitle,
   change,
   changeLabel = 'vs prev period',
   icon: Icon,
@@ -56,6 +58,9 @@ export function KPICard({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400 truncate">{title}</p>
           <p className="mt-1 text-2xl sm:text-3xl font-semibold text-navy-900 dark:text-white truncate">{value}</p>
+          {subtitle && (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
+          )}
           {change !== undefined && (
             <div className={`mt-2 flex items-center gap-1 text-sm ${getChangeColor()}`}>
               {getChangeIcon()}
