@@ -8,6 +8,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 interface KPIConfig {
   id: string
   title: string
+  tooltip: string
   icon: LucideIcon
   getValue: (data: ReturnType<typeof useOverview>['data'], perfData: ReturnType<typeof usePerformance>['data']) => string
   getChange?: (data: ReturnType<typeof useOverview>['data']) => number | null | undefined
@@ -18,6 +19,7 @@ const ALL_KPIS: KPIConfig[] = [
   {
     id: 'revenue',
     title: 'Total Revenue',
+    tooltip: 'Total gross revenue from all sales in the selected period.',
     icon: DollarSign,
     getValue: (data) => data ? formatCurrency(data.total_revenue) : '-',
     getChange: (data) => data?.period_growth,
@@ -25,30 +27,35 @@ const ALL_KPIS: KPIConfig[] = [
   {
     id: 'transactions',
     title: 'Transactions',
+    tooltip: 'Number of individual line items sold across all receipts.',
     icon: Receipt,
     getValue: (data) => data ? data.total_transactions.toLocaleString() : '-',
   },
   {
     id: 'avgTicket',
     title: 'Avg Ticket',
+    tooltip: 'Average revenue per receipt. Calculated as total revenue divided by number of receipts.',
     icon: ShoppingBag,
     getValue: (data) => data ? formatCurrencyFull(data.avg_ticket) : '-',
   },
   {
     id: 'uniqueItems',
     title: 'Unique Items',
+    tooltip: 'Number of distinct menu items sold in the selected period.',
     icon: TrendingUp,
     getValue: (data) => data ? data.unique_items.toLocaleString() : '-',
   },
   {
     id: 'growth',
     title: 'Growth %',
+    tooltip: 'Revenue change compared to the previous period of equal length.',
     icon: Percent,
     getValue: (data) => data?.period_growth != null ? `${data.period_growth > 0 ? '+' : ''}${data.period_growth.toFixed(1)}%` : 'N/A',
   },
   {
     id: 'bestDay',
     title: 'Best Day',
+    tooltip: 'Highest single-day revenue in the selected period.',
     icon: Calendar,
     getValue: (_, perfData) => perfData?.trends?.best_day ? formatCurrency(perfData.trends.best_day.revenue) : '-',
     getSubtitle: (_, perfData) => {
@@ -88,6 +95,7 @@ export function KPISection() {
         <KPICard
           key={kpi.id}
           title={kpi.title}
+          tooltip={kpi.tooltip}
           value={kpi.getValue(data, perfData)}
           subtitle={kpi.getSubtitle?.(data, perfData)}
           change={kpi.getChange?.(data)}
