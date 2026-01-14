@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Multi-tenant restaurant analytics SaaS platform. Consulting-first model where the operator (Dan) receives CSV exports from restaurant clients (StoreHub POS), uploads/cleans data, and clients access polished analytics dashboards.
 
+## Git Workflow - IMPORTANT
+
+**NEVER merge branches to main without explicit approval from Dan.** The workflow is:
+
+1. Create a feature/fix branch
+2. Implement the changes
+3. Run build/lint to verify no breaks
+4. **STOP - Leave branch unmerged**
+5. Wait for Dan to test and approve
+6. Only merge after explicit "merge it" or similar approval
+
+This applies to ALL changes - bugs, features, everything. Breaking main breaks the production app.
+
 ## Tech Stack
 
 - **Frontend:** React 19 + TypeScript + Vite + Tailwind CSS v4
