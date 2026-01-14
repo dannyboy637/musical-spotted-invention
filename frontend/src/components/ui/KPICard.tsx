@@ -5,6 +5,7 @@ interface KPICardProps {
   title: string
   value: string
   tooltip?: string
+  subtitle?: string
   change?: number | null
   changeLabel?: string
   icon?: LucideIcon
@@ -15,6 +16,7 @@ export function KPICard({
   title,
   value,
   tooltip,
+  subtitle,
   change,
   changeLabel = 'vs prev period',
   icon: Icon,
@@ -69,6 +71,9 @@ export function KPICard({
             )}
           </div>
           <p className="mt-1 text-2xl sm:text-3xl font-semibold text-navy-900 dark:text-white truncate">{value}</p>
+          {subtitle && (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
+          )}
           {change !== undefined && (
             <div className={`mt-2 flex items-center gap-1 text-sm ${getChangeColor()}`}>
               {getChangeIcon()}

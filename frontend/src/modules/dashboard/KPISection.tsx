@@ -12,6 +12,7 @@ interface KPIConfig {
   icon: LucideIcon
   getValue: (data: ReturnType<typeof useOverview>['data'], perfData: ReturnType<typeof usePerformance>['data']) => string
   getChange?: (data: ReturnType<typeof useOverview>['data']) => number | null | undefined
+  getSubtitle?: (data: ReturnType<typeof useOverview>['data'], perfData: ReturnType<typeof usePerformance>['data']) => string | undefined
 }
 
 const ALL_KPIS: KPIConfig[] = [
@@ -57,6 +58,17 @@ const ALL_KPIS: KPIConfig[] = [
     tooltip: 'Highest single-day revenue in the selected period.',
     icon: Calendar,
     getValue: (_, perfData) => perfData?.trends?.best_day ? formatCurrency(perfData.trends.best_day.revenue) : '-',
+    getSubtitle: (_, perfData) => {
+      if (!perfData?.trends?.best_day) return undefined
+      const { date, revenue } = perfData.trends.best_day
+      const dailyAvg = perfData.trends.daily_avg
+      const formattedDate = new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      if (dailyAvg > 0) {
+        const aboveAvg = Math.round(((revenue - dailyAvg) / dailyAvg) * 100)
+        return `${formattedDate} • ${aboveAvg}% above avg`
+      }
+      return formattedDate
+    },
   },
 ]
 
@@ -85,6 +97,7 @@ export function KPISection() {
           title={kpi.title}
           tooltip={kpi.tooltip}
           value={kpi.getValue(data, perfData)}
+          subtitle={kpi.getSubtitle?.(data, perfData)}
           change={kpi.getChange?.(data)}
           icon={kpi.icon}
           loading={isLoading || (kpi.id === 'bestDay' && perfLoading)}

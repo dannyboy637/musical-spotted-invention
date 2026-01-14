@@ -91,6 +91,41 @@ export interface CategoriesData {
   generated_at: string
 }
 
+export interface CategoryItemData {
+  item_name: string
+  quantity: number
+  revenue: number
+  avg_price: number
+  percentage_of_category: number
+}
+
+export interface CategoryItemsData {
+  category: string
+  items: CategoryItemData[]
+  total_items: number
+  total_revenue: number
+  total_quantity: number
+  filters_applied: Record<string, unknown>
+  generated_at: string
+}
+
+export interface BranchCategoryData {
+  branch: string
+  revenue: number
+  quantity: number
+  avg_price: number
+  item_count: number
+  percentage_of_branch: number
+  top_item: string
+}
+
+export interface CategoryByBranchData {
+  category: string
+  branches: BranchCategoryData[]
+  filters_applied: Record<string, unknown>
+  generated_at: string
+}
+
 export interface BundlePair {
   item_a: string
   item_b: string
@@ -317,6 +352,28 @@ export function useCategories(options?: { includeExcluded?: boolean }) {
   return useAnalyticsQuery<CategoriesData>('categories', 'analytics-categories', {
     extraParams: options?.includeExcluded ? { include_excluded: true } : undefined,
   })
+}
+
+export function useCategoryItems(category: string | null) {
+  return useAnalyticsQuery<CategoryItemsData>(
+    'category-items',
+    `analytics-category-items-${category}`,
+    {
+      enabled: !!category,
+      extraParams: { category: category || '' },
+    }
+  )
+}
+
+export function useCategoryByBranch(category: string | null) {
+  return useAnalyticsQuery<CategoryByBranchData>(
+    'category-by-branch',
+    `analytics-category-by-branch-${category}`,
+    {
+      enabled: !!category,
+      extraParams: { category: category || '' },
+    }
+  )
 }
 
 export function useBundles(options?: { minFrequency?: number; limit?: number }) {

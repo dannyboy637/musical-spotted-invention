@@ -2,6 +2,7 @@ interface StatCardProps {
   label: string
   value: string
   sublabel?: string
+  note?: string
   color?: 'default' | 'success' | 'warning' | 'danger' | 'info'
   loading?: boolean
 }
@@ -10,6 +11,7 @@ export function StatCard({
   label,
   value,
   sublabel,
+  note,
   color = 'default',
   loading = false,
 }: StatCardProps) {
@@ -59,6 +61,7 @@ export function StatCard({
       <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>
       <p className={`mt-1 text-xl font-semibold ${getValueColor()}`}>{value}</p>
       {sublabel && <p className="mt-1 text-xs text-slate-400">{sublabel}</p>}
+      {note && <p className="mt-1 text-xs text-amber-600 italic">{note}</p>}
     </div>
   )
 }

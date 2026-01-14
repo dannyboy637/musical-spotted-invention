@@ -21,6 +21,7 @@ interface DataTableProps<T> {
   className?: string
   compact?: boolean
   paginated?: boolean
+  rowClassName?: (row: T, index: number) => string
 }
 
 type SortDirection = 'asc' | 'desc' | null
@@ -34,6 +35,7 @@ export function DataTable<T extends object>({
   className = '',
   compact = false,
   paginated = false,
+  rowClassName,
 }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
@@ -176,10 +178,11 @@ export function DataTable<T extends object>({
           <tbody className="divide-y divide-slate-100">
             {paginatedData.map((row, index) => {
               const key = keyField ? String(row[keyField]) : index
+              const customRowClass = rowClassName ? rowClassName(row, index) : ''
               return (
                 <tr
                   key={key}
-                  className={`${onRowClick ? 'cursor-pointer hover:bg-slate-50' : ''} transition-colors`}
+                  className={`${onRowClick ? 'cursor-pointer hover:bg-slate-50' : ''} transition-colors ${customRowClass}`}
                   onClick={() => onRowClick?.(row, index)}
                 >
                   {columns.map((column) => (

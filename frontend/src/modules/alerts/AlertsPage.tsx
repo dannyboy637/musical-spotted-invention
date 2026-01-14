@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Bell, RefreshCw, Filter, X, TrendingDown, TrendingUp, Star, AlertTriangle, Check } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Bell, RefreshCw, Filter, X, TrendingDown, TrendingUp, Star, AlertTriangle, Check, CheckSquare, Square, Trash2 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
@@ -8,7 +8,7 @@ import {
   useAlerts,
   useDismissAlert,
   useTriggerScan,
-  getAlertSeverityColor,
+  getAlertColor,
   getAlertTypeLabel,
   type Alert,
 } from '../../hooks/useAlerts'
@@ -50,19 +50,35 @@ interface AlertCardProps {
   canDismiss: boolean
   onDismiss: (id: string) => void
   isDismissing: boolean
+  isSelected?: boolean
+  onToggleSelect?: (id: string) => void
+  showCheckbox?: boolean
 }
 
-function AlertCard({ alert, canDismiss, onDismiss, isDismissing }: AlertCardProps) {
-  const colors = getAlertSeverityColor(alert.severity)
+function AlertCard({ alert, canDismiss, onDismiss, isDismissing, isSelected, onToggleSelect, showCheckbox }: AlertCardProps) {
+  const colors = getAlertColor(alert)
   const isDismissed = !!alert.dismissed_at
 
   return (
     <div
       className={`rounded-lg border p-4 ${colors.bg} ${colors.border} ${
         isDismissed ? 'opacity-60' : ''
-      }`}
+      } ${isSelected ? 'ring-2 ring-navy-400' : ''}`}
     >
       <div className="flex items-start gap-3">
+        {showCheckbox && !isDismissed && (
+          <button
+            type="button"
+            onClick={() => onToggleSelect?.(alert.id)}
+            className="flex-shrink-0 mt-0.5 text-slate-500 hover:text-navy-600 transition-colors"
+          >
+            {isSelected ? (
+              <CheckSquare className="h-5 w-5 text-navy-600" />
+            ) : (
+              <Square className="h-5 w-5" />
+            )}
+          </button>
+        )}
         <div className={`flex-shrink-0 ${colors.text}`}>
           {getAlertIcon(alert.type)}
         </div>
@@ -150,6 +166,8 @@ export function AlertsPage() {
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined)
   const [showDismissed, setShowDismissed] = useState(true)
   const [dismissingId, setDismissingId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isBulkDismissing, setIsBulkDismissing] = useState(false)
 
   const { data, isLoading } = useAlerts({
     activeOnly: !showDismissed,
@@ -161,12 +179,60 @@ export function AlertsPage() {
   const currentTenant = profile?.role === 'operator' ? activeTenant : profile?.tenant
   const canDismiss = profile?.role === 'owner' || profile?.role === 'operator'
 
+  // Get active (non-dismissed) alerts for selection
+  const activeAlerts = useMemo(
+    () => data?.alerts?.filter((a) => !a.dismissed_at) || [],
+    [data?.alerts]
+  )
+
   const handleDismiss = async (alertId: string) => {
     setDismissingId(alertId)
     try {
       await dismissMutation.mutateAsync(alertId)
+      // Remove from selected if it was selected
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(alertId)
+        return next
+      })
     } finally {
       setDismissingId(null)
+    }
+  }
+
+  const handleToggleSelect = (alertId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(alertId)) {
+        next.delete(alertId)
+      } else {
+        next.add(alertId)
+      }
+      return next
+    })
+  }
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === activeAlerts.length) {
+      // Deselect all
+      setSelectedIds(new Set())
+    } else {
+      // Select all active
+      setSelectedIds(new Set(activeAlerts.map((a) => a.id)))
+    }
+  }
+
+  const handleDismissSelected = async () => {
+    if (selectedIds.size === 0) return
+    setIsBulkDismissing(true)
+    try {
+      // Dismiss all selected alerts
+      for (const alertId of selectedIds) {
+        await dismissMutation.mutateAsync(alertId)
+      }
+      setSelectedIds(new Set())
+    } finally {
+      setIsBulkDismissing(false)
     }
   }
 
@@ -237,6 +303,21 @@ export function AlertsPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Dismiss Selected Button */}
+          {canDismiss && selectedIds.size > 0 && (
+            <button
+              onClick={handleDismissSelected}
+              disabled={isBulkDismissing}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {isBulkDismissing ? (
+                <Spinner size="sm" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Dismiss {selectedIds.size} selected
+            </button>
+          )}
           {/* Scan Button */}
           <button
             onClick={handleScan}
@@ -296,6 +377,25 @@ export function AlertsPage() {
         </div>
       ) : (
         <div className="space-y-3">
+          {/* Select All Header */}
+          {canDismiss && activeAlerts.length > 0 && (
+            <div className="flex items-center gap-3 px-1">
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-navy-600 transition-colors"
+              >
+                {selectedIds.size === activeAlerts.length && activeAlerts.length > 0 ? (
+                  <CheckSquare className="h-4 w-4 text-navy-600" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+                {selectedIds.size === activeAlerts.length && activeAlerts.length > 0
+                  ? 'Deselect all'
+                  : `Select all (${activeAlerts.length})`}
+              </button>
+            </div>
+          )}
           {data.alerts.map((alert) => (
             <AlertCard
               key={alert.id}
@@ -303,6 +403,9 @@ export function AlertsPage() {
               canDismiss={canDismiss}
               onDismiss={handleDismiss}
               isDismissing={dismissingId === alert.id}
+              isSelected={selectedIds.has(alert.id)}
+              onToggleSelect={handleToggleSelect}
+              showCheckbox={canDismiss}
             />
           ))}
         </div>

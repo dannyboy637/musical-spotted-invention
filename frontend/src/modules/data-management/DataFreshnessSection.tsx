@@ -13,7 +13,7 @@ export function DataFreshnessSection() {
   const menuItemCount = typeof health?.counts.menu_items === 'number'
     ? health.counts.menu_items
     : 0
-  const issues = health?.issues || []
+  const issues: string[] = health?.issues || []
 
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return 'Never'
@@ -86,12 +86,12 @@ export function DataFreshnessSection() {
             <FileText size={16} />
             <span className="text-xs font-medium uppercase">Data Range</span>
           </div>
-          {lastImport?.date_range_start && lastImport?.date_range_end ? (
+          {health?.date_range?.start && health?.date_range?.end ? (
             <>
               <p className="text-sm font-medium text-navy-900">
-                {new Date(lastImport.date_range_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {new Date(health.date_range.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 {' - '}
-                {new Date(lastImport.date_range_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {new Date(health.date_range.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </p>
             </>
           ) : (

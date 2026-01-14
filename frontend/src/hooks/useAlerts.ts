@@ -216,33 +216,61 @@ export function useUpdateAlertSettings() {
   })
 }
 
-// Helper to get severity color
+// Color definitions for consistency
+const ALERT_COLORS = {
+  critical: {
+    bg: 'bg-red-50 dark:bg-red-900/20',
+    text: 'text-red-800 dark:text-red-200',
+    border: 'border-red-200 dark:border-red-800',
+  },
+  warning: {
+    bg: 'bg-amber-50 dark:bg-amber-900/20',
+    text: 'text-amber-800 dark:text-amber-200',
+    border: 'border-amber-200 dark:border-amber-800',
+  },
+  info: {
+    bg: 'bg-blue-50 dark:bg-blue-900/20',
+    text: 'text-blue-800 dark:text-blue-200',
+    border: 'border-blue-200 dark:border-blue-800',
+  },
+  success: {
+    bg: 'bg-emerald-50 dark:bg-emerald-900/20',
+    text: 'text-emerald-800 dark:text-emerald-200',
+    border: 'border-emerald-200 dark:border-emerald-800',
+  },
+}
+
+// Helper to get severity color (legacy, for backwards compatibility)
 export function getAlertSeverityColor(severity: Alert['severity']): {
   bg: string
   text: string
   border: string
 } {
-  switch (severity) {
-    case 'critical':
-      return {
-        bg: 'bg-red-50 dark:bg-red-900/20',
-        text: 'text-red-800 dark:text-red-200',
-        border: 'border-red-200 dark:border-red-800',
-      }
-    case 'warning':
-      return {
-        bg: 'bg-amber-50 dark:bg-amber-900/20',
-        text: 'text-amber-800 dark:text-amber-200',
-        border: 'border-amber-200 dark:border-amber-800',
-      }
-    case 'info':
-    default:
-      return {
-        bg: 'bg-blue-50 dark:bg-blue-900/20',
-        text: 'text-blue-800 dark:text-blue-200',
-        border: 'border-blue-200 dark:border-blue-800',
-      }
+  return ALERT_COLORS[severity] || ALERT_COLORS.info
+}
+
+// Helper to get alert color based on type and severity
+// Uses type-aware coloring for quadrant alerts
+export function getAlertColor(alert: Alert): {
+  bg: string
+  text: string
+  border: string
+} {
+  // Quadrant alerts use type-based coloring
+  if (alert.type === 'new_star') {
+    return ALERT_COLORS.success // Green for Star promotion (good)
   }
+  if (alert.type === 'new_dog') {
+    return ALERT_COLORS.critical // Red for Dog demotion (bad)
+  }
+
+  // Item spike is good (sales went up)
+  if (alert.type === 'item_spike') {
+    return ALERT_COLORS.success
+  }
+
+  // All other alerts use severity-based coloring
+  return ALERT_COLORS[alert.severity] || ALERT_COLORS.info
 }
 
 // Helper to get alert type label
