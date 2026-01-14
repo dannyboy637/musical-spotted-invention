@@ -8,7 +8,7 @@ import {
   useAlerts,
   useDismissAlert,
   useTriggerScan,
-  getAlertSeverityColor,
+  getAlertColor,
   getAlertTypeLabel,
   type Alert,
 } from '../../hooks/useAlerts'
@@ -56,7 +56,7 @@ interface AlertCardProps {
 }
 
 function AlertCard({ alert, canDismiss, onDismiss, isDismissing, isSelected, onToggleSelect, showCheckbox }: AlertCardProps) {
-  const colors = getAlertSeverityColor(alert.severity)
+  const colors = getAlertColor(alert)
   const isDismissed = !!alert.dismissed_at
 
   return (
