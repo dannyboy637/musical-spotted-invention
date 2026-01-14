@@ -44,6 +44,7 @@ interface LineChartProps {
   referenceLines?: ReferenceLineConfig[];
   xAxisLabel?: string | AxisLabelConfig;
   yAxisLabel?: string | AxisLabelConfig;
+  onDataPointClick?: (dataPoint: Record<string, string | number>, index: number) => void;
 }
 
 // Custom legend component with tooltip support
@@ -101,13 +102,29 @@ export function LineChart({
   referenceLines = [],
   xAxisLabel,
   yAxisLabel,
+  onDataPointClick,
 }: LineChartProps) {
   // Parse axis label configs
   const xLabel = typeof xAxisLabel === 'string' ? { text: xAxisLabel } : xAxisLabel;
   const yLabel = typeof yAxisLabel === 'string' ? { text: yAxisLabel } : yAxisLabel;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleChartClick = (e: any) => {
+    if (onDataPointClick && e?.activePayload?.[0]?.payload) {
+      const payload = e.activePayload[0].payload as Record<string, string | number>;
+      const index = data.findIndex((d) => d[xKey] === payload[xKey]);
+      onDataPointClick(payload, index);
+    }
+  };
+
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <RechartsLineChart data={data} margin={chartConfig.margin}>
+      <RechartsLineChart
+        data={data}
+        margin={chartConfig.margin}
+        onClick={onDataPointClick ? handleChartClick : undefined}
+        style={{ cursor: onDataPointClick ? 'pointer' : 'default' }}
+      >
         {showGrid && (
           <CartesianGrid
             stroke={chartConfig.grid.stroke}

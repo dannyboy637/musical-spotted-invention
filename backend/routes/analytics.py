@@ -360,6 +360,57 @@ class YearOverYearResponse(BaseModel):
     generated_at: str
 
 
+class HourlyBreakdownItem(BaseModel):
+    """Data for a single hour of the day."""
+    hour: int  # 0-23
+    revenue: int  # cents
+    transactions: int
+    quantity: int
+
+
+class TopItemData(BaseModel):
+    """Single item in top/bottom lists."""
+    item_name: str
+    quantity: int
+    revenue: int  # cents
+
+
+class DayComparisonData(BaseModel):
+    """Comparison to the same day last week."""
+    prior_date: str
+    prior_revenue: int
+    prior_transactions: int
+    revenue_change_pct: Optional[float] = None
+    transactions_change_pct: Optional[float] = None
+    top_items_overlap: int  # How many top 10 items appear in both
+
+
+class DayBreakdownResponse(BaseModel):
+    """Complete breakdown of a single day's performance."""
+    date: str  # YYYY-MM-DD
+    day_name: str  # "Monday", "Tuesday", etc.
+
+    # Summary metrics
+    total_revenue: int  # cents
+    total_transactions: int
+    total_quantity: int
+    avg_ticket: int  # cents
+
+    # Hourly breakdown (24 data points)
+    hourly: List[HourlyBreakdownItem]
+    peak_hour: int  # Hour with highest revenue
+
+    # Item performance
+    top_items: List[TopItemData]  # Top 10
+    bottom_items: List[TopItemData]  # Bottom 10
+
+    # Week-over-week comparison
+    comparison: Optional[DayComparisonData] = None
+
+    filters_applied: dict
+    generated_at: str
+
+
 # ============================================
 # OVERVIEW ENDPOINT
 # ============================================
@@ -2044,6 +2095,211 @@ async def get_item_history(
         history=history,
         current_quadrant=current_quadrant,
         quadrant_changes=0,  # Would be calculated from historical data
+        filters_applied=filters.model_dump(exclude_none=True),
+        generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+# ============================================
+# DAY BREAKDOWN ENDPOINT (Day Deep Dive)
+# ============================================
+
+@router.get("/day-breakdown", response_model=DayBreakdownResponse)
+async def get_day_breakdown(
+    date: str = Query(..., description="Date to analyze (YYYY-MM-DD)"),
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    branches: Optional[str] = None,
+    categories: Optional[str] = None,
+):
+    """
+    Get detailed breakdown of a single day's performance.
+
+    Returns:
+    - Hourly revenue/transactions breakdown (24 hours)
+    - Top 10 and Bottom 10 items for the day
+    - Comparison to the same day of the previous week
+
+    Uses hourly_summaries and branch_summaries tables for fast queries.
+    """
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    filters = parse_filters(date, date, branches, categories)
+
+    # Parse the date
+    try:
+        target_date = datetime.fromisoformat(date)
+        day_name = target_date.strftime("%A")  # "Monday", etc.
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid date format: {date}. Use YYYY-MM-DD."
+        )
+
+    # Query hourly_summaries for this date
+    hourly_query = supabase.table("hourly_summaries").select(
+        "local_hour, revenue, quantity, transaction_count"
+    ).eq("tenant_id", effective_tenant_id).eq("sale_date", date)
+
+    if filters.branches:
+        hourly_query = hourly_query.in_("store_name", filters.branches)
+    if filters.categories:
+        hourly_query = hourly_query.in_("category", filters.categories)
+
+    hourly_result = hourly_query.execute()
+    hourly_data = hourly_result.data or []
+
+    # Aggregate by hour
+    hour_totals = {h: {"revenue": 0, "transactions": 0, "quantity": 0} for h in range(24)}
+    for row in hourly_data:
+        hour = row.get("local_hour", 0)
+        if 0 <= hour <= 23:
+            hour_totals[hour]["revenue"] += row.get("revenue", 0) or 0
+            hour_totals[hour]["transactions"] += row.get("transaction_count", 0) or 0
+            hour_totals[hour]["quantity"] += row.get("quantity", 0) or 0
+
+    # Build hourly breakdown
+    hourly = [
+        HourlyBreakdownItem(
+            hour=h,
+            revenue=data["revenue"],
+            transactions=data["transactions"],
+            quantity=data["quantity"],
+        )
+        for h, data in hour_totals.items()
+    ]
+
+    # Calculate totals and peak hour
+    total_revenue = sum(h.revenue for h in hourly)
+    total_transactions = sum(h.transactions for h in hourly)
+    total_quantity = sum(h.quantity for h in hourly)
+    peak_hour = max(hourly, key=lambda h: h.revenue).hour if hourly else 12
+
+    # Get top items from branch_summaries (daily period)
+    top_items: List[TopItemData] = []
+    bottom_items: List[TopItemData] = []
+
+    branch_query = supabase.table("branch_summaries").select(
+        "top_items"
+    ).eq("tenant_id", effective_tenant_id).eq(
+        "period_type", "daily"
+    ).eq("period_start", date)
+
+    if filters.branches:
+        branch_query = branch_query.in_("store_name", filters.branches)
+
+    branch_result = branch_query.execute()
+
+    # Aggregate top_items across branches
+    item_totals = {}
+    for row in branch_result.data or []:
+        items = row.get("top_items") or []
+        for item in items:
+            name = item.get("item_name", "Unknown")
+            if name not in item_totals:
+                item_totals[name] = {"quantity": 0, "revenue": 0}
+            item_totals[name]["quantity"] += item.get("quantity", 0) or 0
+            item_totals[name]["revenue"] += item.get("revenue", 0) or 0
+
+    # Sort and get top/bottom 10
+    sorted_items = sorted(
+        item_totals.items(),
+        key=lambda x: x[1]["revenue"],
+        reverse=True
+    )
+
+    top_items = [
+        TopItemData(item_name=name, quantity=data["quantity"], revenue=data["revenue"])
+        for name, data in sorted_items[:10]
+    ]
+
+    # Bottom 10 - take from the end, reverse to show lowest first
+    if len(sorted_items) > 10:
+        bottom_items = [
+            TopItemData(item_name=name, quantity=data["quantity"], revenue=data["revenue"])
+            for name, data in sorted_items[-10:][::-1]
+        ]
+    else:
+        # If less than 20 items total, just take what's left after top 10
+        bottom_items = [
+            TopItemData(item_name=name, quantity=data["quantity"], revenue=data["revenue"])
+            for name, data in sorted_items[10:][::-1]
+        ]
+
+    # Week-over-week comparison
+    comparison = None
+    prior_date = (target_date - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    prior_query = supabase.table("hourly_summaries").select(
+        "revenue, transaction_count"
+    ).eq("tenant_id", effective_tenant_id).eq("sale_date", prior_date)
+
+    if filters.branches:
+        prior_query = prior_query.in_("store_name", filters.branches)
+    if filters.categories:
+        prior_query = prior_query.in_("category", filters.categories)
+
+    prior_result = prior_query.execute()
+    prior_data = prior_result.data or []
+
+    if prior_data:
+        prior_revenue = sum(r.get("revenue", 0) or 0 for r in prior_data)
+        prior_transactions = sum(r.get("transaction_count", 0) or 0 for r in prior_data)
+
+        revenue_change = None
+        transactions_change = None
+
+        if prior_revenue > 0:
+            revenue_change = round(
+                ((total_revenue - prior_revenue) / prior_revenue) * 100, 1
+            )
+        if prior_transactions > 0:
+            transactions_change = round(
+                ((total_transactions - prior_transactions) / prior_transactions) * 100, 1
+            )
+
+        # Get prior week's top items for overlap calculation
+        prior_branch = supabase.table("branch_summaries").select(
+            "top_items"
+        ).eq("tenant_id", effective_tenant_id).eq(
+            "period_type", "daily"
+        ).eq("period_start", prior_date)
+
+        if filters.branches:
+            prior_branch = prior_branch.in_("store_name", filters.branches)
+
+        prior_branch_result = prior_branch.execute()
+
+        prior_top_names = set()
+        for row in prior_branch_result.data or []:
+            for item in row.get("top_items") or []:
+                prior_top_names.add(item.get("item_name"))
+
+        current_top_names = {item.item_name for item in top_items}
+        overlap = len(current_top_names & prior_top_names)
+
+        comparison = DayComparisonData(
+            prior_date=prior_date,
+            prior_revenue=prior_revenue,
+            prior_transactions=prior_transactions,
+            revenue_change_pct=revenue_change,
+            transactions_change_pct=transactions_change,
+            top_items_overlap=overlap,
+        )
+
+    avg_ticket = total_revenue // total_transactions if total_transactions > 0 else 0
+
+    return DayBreakdownResponse(
+        date=date,
+        day_name=day_name,
+        total_revenue=total_revenue,
+        total_transactions=total_transactions,
+        total_quantity=total_quantity,
+        avg_ticket=avg_ticket,
+        hourly=hourly,
+        peak_hour=peak_hour,
+        top_items=top_items,
+        bottom_items=bottom_items,
+        comparison=comparison,
         filters_applied=filters.model_dump(exclude_none=True),
         generated_at=datetime.utcnow().isoformat(),
     )
