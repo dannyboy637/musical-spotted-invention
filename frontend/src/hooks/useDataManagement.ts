@@ -42,12 +42,16 @@ export interface UploadResponse {
 
 export interface DataHealthResponse {
   tenant_id: string
-  functions: Record<string, boolean>
+  functions?: Record<string, boolean>
   counts: {
     transactions: number | string
     menu_items: number | string
   }
-  issues: string[]
+  date_range: {
+    start: string | null
+    end: string | null
+  }
+  issues?: string[]
 }
 
 // Hook to list import jobs
