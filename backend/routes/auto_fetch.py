@@ -5,6 +5,7 @@ Protected by a secret token to prevent unauthorized access.
 """
 import os
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 
@@ -48,11 +49,14 @@ def run_fetch(tenant_subdomain: str, username: str, password: str, tenant_id: st
 
     Returns a dict with results.
     """
-    # Determine date to fetch (default: yesterday)
+    # Determine date to fetch (default: yesterday in Manila timezone)
     if fetch_date:
         target_date = fetch_date
     else:
-        yesterday = datetime.now() - timedelta(days=1)
+        # Use Manila timezone for date calculation since cron job runs at 2AM Manila
+        tz = ZoneInfo(os.getenv("AUTO_FETCH_TIMEZONE", "Asia/Manila"))
+        now_local = datetime.now(tz)
+        yesterday = now_local - timedelta(days=1)
         target_date = yesterday.strftime("%m/%d/%Y")
 
     # Initialize client and login

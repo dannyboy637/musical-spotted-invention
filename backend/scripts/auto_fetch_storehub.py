@@ -24,6 +24,7 @@ Optional:
 import os
 import sys
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from urllib.parse import quote
 
 # Add parent directory to path for imports
@@ -164,8 +165,11 @@ class StoreHubClient:
 
 
 def get_yesterday_date() -> str:
-    """Get yesterday's date in MM/DD/YYYY format."""
-    yesterday = datetime.now() - timedelta(days=1)
+    """Get yesterday's date in MM/DD/YYYY format (Manila timezone)."""
+    # Use Manila timezone since cron job runs at 2AM Manila time
+    tz = ZoneInfo(os.getenv("AUTO_FETCH_TIMEZONE", "Asia/Manila"))
+    now_local = datetime.now(tz)
+    yesterday = now_local - timedelta(days=1)
     return yesterday.strftime("%m/%d/%Y")
 
 
