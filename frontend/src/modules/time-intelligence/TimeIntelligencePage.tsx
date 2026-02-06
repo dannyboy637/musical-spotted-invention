@@ -1,6 +1,7 @@
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import { PeakTimesCard } from './PeakTimesCard'
 import { SalesHeatmap } from './SalesHeatmap'
 import { DaypartBreakdown } from './DaypartBreakdown'
@@ -30,10 +31,11 @@ export function TimeIntelligencePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="time-intelligence-export" className="space-y-6">
       <PageHeader
         title="Time Intelligence"
         subtitle={`Analyze sales patterns by time for ${currentTenant.name}`}
+        actions={<ExportPdfButton title="Time Intelligence" targetId="time-intelligence-export" />}
       />
 
       {/* Peak Times Summary */}

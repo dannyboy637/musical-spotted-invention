@@ -1,6 +1,7 @@
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import { QuadrantSummaryCard } from './QuadrantSummaryCard'
 import { YoYComparisonChart } from './YoYComparisonChart'
 import { SeasonalTrendsChart } from './SeasonalTrendsChart'
@@ -28,10 +29,11 @@ export function MovementsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="movements-export" className="space-y-6">
       <PageHeader
         title="Movements"
         subtitle={`Historical performance trends and menu item movements for ${currentTenant.name}`}
+        actions={<ExportPdfButton title="Movements" targetId="movements-export" />}
       />
 
       {/* Quadrant Distribution Summary */}

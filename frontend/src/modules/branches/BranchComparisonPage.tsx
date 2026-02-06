@@ -1,6 +1,7 @@
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import { usePerformanceBranches } from '../../hooks/useAnalytics'
 import { BranchRevenueChart } from './BranchRevenueChart'
 import { BranchMetricsTable } from './BranchMetricsTable'
@@ -49,10 +50,11 @@ export function BranchComparisonPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="branches-export" className="space-y-6">
       <PageHeader
         title="Branch Comparison"
         subtitle={`Compare performance across locations for ${currentTenant.name}`}
+        actions={<ExportPdfButton title="Branch Comparison" targetId="branches-export" />}
       />
 
       {/* Comparison Highlights */}

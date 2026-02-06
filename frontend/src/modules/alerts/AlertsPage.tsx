@@ -4,6 +4,7 @@ import { Bell, RefreshCw, Filter, X, TrendingDown, TrendingUp, Star, AlertTriang
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import { Spinner } from '../../components/ui/Spinner'
 import { WatchListSection } from './WatchListSection'
 import {
@@ -267,10 +268,11 @@ export function AlertsPage() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div id="alerts-export" className="space-y-6">
       <PageHeader
         title="Alerts"
         subtitle={`Recent anomaly notifications for ${currentTenant.name} (last 7 days)`}
+        actions={<ExportPdfButton title="Alerts" targetId="alerts-export" />}
       />
 
       {/* Link to Movements for historical analysis */}

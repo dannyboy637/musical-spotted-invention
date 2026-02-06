@@ -3,6 +3,7 @@ import { Check, X } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import type { MenuEngineeringItem } from '../../hooks/useAnalytics'
 import { QuadrantSummary } from './QuadrantSummary'
 import { QuadrantChart } from './QuadrantChart'
@@ -58,10 +59,11 @@ export function MenuEngineeringPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="menu-engineering-export" className="space-y-6">
       <PageHeader
         title="Menu Engineering"
         subtitle={`Analyze menu items by popularity and profitability for ${currentTenant.name}`}
+        actions={<ExportPdfButton title="Menu Engineering" targetId="menu-engineering-export" />}
       />
 
       {/* Filter Controls Section */}

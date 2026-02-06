@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import type { CategoryData } from '../../hooks/useAnalytics'
 import { MacroCategoryCards } from './MacroCategoryCards'
 import { CategoryBreakdownChart } from './CategoryBreakdownChart'
@@ -61,10 +62,11 @@ export function CategoryPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="categories-export" className="space-y-6">
       <PageHeader
         title="Categories"
         subtitle={`Analyze category performance for ${currentTenant.name}`}
+        actions={<ExportPdfButton title="Categories" targetId="categories-export" />}
       />
 
       {/* Macro Category Cards */}
