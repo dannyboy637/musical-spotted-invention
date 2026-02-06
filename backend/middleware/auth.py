@@ -31,6 +31,15 @@ JWKS_CACHE_TTL = 3600  # Refresh JWKS every hour
 security = HTTPBearer()
 
 
+def get_expected_issuers() -> list[str]:
+    """Return the allowed JWT issuer values derived from SUPABASE_URL."""
+    if not SUPABASE_URL:
+        return []
+    base_url = SUPABASE_URL.rstrip("/")
+    # Supabase tokens typically use /auth/v1 as issuer, but accept base URL for compatibility.
+    return [f"{base_url}/auth/v1", base_url]
+
+
 def fetch_jwks() -> dict:
     """Fetch JWKS from Supabase with proper SSL handling."""
     global _jwks_keys, _jwks_fetched_at
@@ -91,9 +100,19 @@ def decode_token(token: str) -> dict:
         payload = jwt.decode(
             token,
             signing_key.key,
-            algorithms=["ES256", "HS256"],  # Support both for compatibility
+            algorithms=["ES256"],
             audience="authenticated",
+            options={"verify_iss": False},
         )
+        expected_issuers = get_expected_issuers()
+        if expected_issuers:
+            issuer = payload.get("iss")
+            if issuer not in expected_issuers:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token issuer",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(

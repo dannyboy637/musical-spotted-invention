@@ -54,9 +54,9 @@ CREATE INDEX idx_transactions_tenant_date
 
 ## Migrations
 
-Keep migration files in `supabase/migrations/`:
+Keep migration files in `backend/migrations/`:
 ```
-20241230_create_tenants.sql
-20241230_create_users.sql
-20241231_create_transactions.sql
+000_create_tenants.sql
+001_create_users.sql
+002_create_transactions.sql
 ```

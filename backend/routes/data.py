@@ -78,6 +78,43 @@ class CleanupStaleResponse(BaseModel):
     job_ids: list[str]
 
 
+class ItemExclusion(BaseModel):
+    """Single item exclusion entry."""
+    id: str
+    item_name: str
+    reason: Optional[str] = None
+    created_at: str
+    created_by: Optional[str] = None
+
+
+class ItemExclusionCreate(BaseModel):
+    """Request to create a new item exclusion."""
+    item_name: str
+    reason: Optional[str] = None
+
+
+class ItemExclusionSuggestion(BaseModel):
+    """Suggested item exclusion based on low activity."""
+    item_name: str
+    total_quantity: int
+    total_revenue: int
+    order_count: int
+    first_sale_date: Optional[str] = None
+    last_sale_date: Optional[str] = None
+
+
+class ItemExclusionSuggestionsResponse(BaseModel):
+    """Response for exclusion suggestions."""
+    suggestions: list[ItemExclusionSuggestion]
+    thresholds: dict
+
+
+class ItemExclusionDeleteResponse(BaseModel):
+    """Response for deleting an exclusion."""
+    success: bool
+    deleted_id: str
+
+
 # ============================================
 # BACKGROUND TASK
 # ============================================
@@ -96,6 +133,23 @@ async def process_import_task(
             status="failed",
             error_message=str(e)
         )
+
+
+def _refresh_analytics_after_exclusion(tenant_id: str) -> None:
+    """Refresh summaries and menu items after exclusion changes."""
+    try:
+        supabase.rpc("refresh_all_summaries", {"p_tenant_id": tenant_id}).execute()
+        print(f"Refreshed summary tables for tenant {tenant_id}", flush=True)
+    except Exception as e:
+        print(f"Warning: Summary table refresh failed: {e}", flush=True)
+
+    try:
+        supabase.rpc("regenerate_menu_items", {"p_tenant_id": tenant_id}).execute()
+        print(f"Regenerated menu items for tenant {tenant_id}", flush=True)
+    except Exception as e:
+        print(f"Warning: Menu item regeneration failed: {e}", flush=True)
+
+    data_cache.invalidate_tenant(tenant_id)
 
 
 # ============================================
@@ -695,10 +749,10 @@ async def get_transactions_summary(
     end_date: Optional[str] = None,
 ):
     """Get summary statistics for transactions."""
-    if user.role != "operator" and not user.tenant_id:
+    if not user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No tenant associated"
+            detail="No tenant selected"
         )
 
     tenant_id = user.tenant_id
@@ -787,6 +841,187 @@ async def regenerate_menu_items(
     return RegenerateResponse(
         status="completed",
         menu_items_updated=count
+    )
+
+
+# ============================================
+# ITEM EXCLUSIONS ENDPOINTS
+# ============================================
+
+@router.get("/item-exclusions", response_model=list[ItemExclusion])
+async def list_item_exclusions(
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+):
+    """List item exclusions for the current tenant (owner/operator only)."""
+    if user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot manage item exclusions"
+        )
+
+    target_tenant = tenant_id if user.role == "operator" and tenant_id else user.tenant_id
+    if not target_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tenant selected"
+        )
+
+    result = supabase.table("item_exclusions") \
+        .select("*") \
+        .eq("tenant_id", target_tenant) \
+        .order("created_at", desc=True) \
+        .execute()
+
+    return result.data or []
+
+
+@router.post("/item-exclusions", response_model=ItemExclusion)
+async def create_item_exclusion(
+    payload: ItemExclusionCreate,
+    background_tasks: BackgroundTasks,
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+):
+    """Create a new item exclusion entry."""
+    if user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot manage item exclusions"
+        )
+
+    target_tenant = tenant_id if user.role == "operator" and tenant_id else user.tenant_id
+    if not target_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tenant selected"
+        )
+
+    item_name = payload.item_name.strip()
+    if not item_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Item name is required"
+        )
+
+    existing = supabase.table("item_exclusions") \
+        .select("id") \
+        .eq("tenant_id", target_tenant) \
+        .eq("item_name", item_name) \
+        .execute()
+    if existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Item already excluded"
+        )
+
+    result = supabase.table("item_exclusions").insert({
+        "tenant_id": target_tenant,
+        "item_name": item_name,
+        "reason": payload.reason,
+        "created_by": user.sub,
+    }).execute()
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create item exclusion"
+        )
+
+    data_cache.invalidate_tenant(target_tenant)
+    background_tasks.add_task(_refresh_analytics_after_exclusion, target_tenant)
+
+    return result.data[0]
+
+
+@router.delete("/item-exclusions/{exclusion_id}", response_model=ItemExclusionDeleteResponse)
+async def delete_item_exclusion(
+    exclusion_id: str,
+    background_tasks: BackgroundTasks,
+    user: UserPayload = Depends(get_user_with_tenant),
+):
+    """Delete an item exclusion by id."""
+    if user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot manage item exclusions"
+        )
+
+    result = supabase.table("item_exclusions") \
+        .delete() \
+        .eq("id", exclusion_id) \
+        .execute()
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Item exclusion not found"
+        )
+
+    deleted = result.data[0]
+    target_tenant = deleted.get("tenant_id") or user.tenant_id
+    if target_tenant:
+        data_cache.invalidate_tenant(target_tenant)
+        background_tasks.add_task(_refresh_analytics_after_exclusion, target_tenant)
+
+    return ItemExclusionDeleteResponse(success=True, deleted_id=exclusion_id)
+
+
+@router.get("/item-exclusions/suggestions", response_model=ItemExclusionSuggestionsResponse)
+async def get_item_exclusion_suggestions(
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    branches: Optional[str] = None,
+    categories: Optional[str] = None,
+    max_quantity: Optional[int] = 2,
+    max_revenue: Optional[int] = 1000,
+    limit: int = 50,
+):
+    """Suggest low-activity items to exclude."""
+    if user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot manage item exclusions"
+        )
+
+    target_tenant = tenant_id if user.role == "operator" and tenant_id else user.tenant_id
+    if not target_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tenant selected"
+        )
+
+    branch_list = branches.split(",") if branches else None
+    category_list = categories.split(",") if categories else None
+
+    result = supabase.rpc("get_item_exclusion_suggestions", {
+        "p_tenant_id": target_tenant,
+        "p_start_date": start_date,
+        "p_end_date": end_date,
+        "p_branches": branch_list,
+        "p_categories": category_list,
+        "p_max_quantity": max_quantity,
+        "p_max_revenue": max_revenue,
+        "p_limit": limit,
+    }).execute()
+
+    suggestions = [
+        ItemExclusionSuggestion(
+            item_name=row.get("item_name", ""),
+            total_quantity=row.get("total_quantity", 0),
+            total_revenue=row.get("total_revenue", 0),
+            order_count=row.get("order_count", 0),
+            first_sale_date=row.get("first_sale_date"),
+            last_sale_date=row.get("last_sale_date"),
+        )
+        for row in (result.data or [])
+    ]
+
+    return ItemExclusionSuggestionsResponse(
+        suggestions=suggestions,
+        thresholds={"max_quantity": max_quantity, "max_revenue": max_revenue}
     )
 
 
@@ -960,15 +1195,15 @@ async def data_health_check(
             txn_result = supabase.table("transactions").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
             menu_result = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
             # Get date range for tenant
-            date_range_result = supabase.table("transactions").select("date").eq("tenant_id", user.tenant_id).order("date", desc=False).limit(1).execute()
-            date_range_end_result = supabase.table("transactions").select("date").eq("tenant_id", user.tenant_id).order("date", desc=True).limit(1).execute()
+            date_range_result = supabase.table("transactions").select("receipt_timestamp").eq("tenant_id", user.tenant_id).order("receipt_timestamp", desc=False).limit(1).execute()
+            date_range_end_result = supabase.table("transactions").select("receipt_timestamp").eq("tenant_id", user.tenant_id).order("receipt_timestamp", desc=True).limit(1).execute()
         elif user.role == "operator":
             # Operators without tenant see all counts
             txn_result = supabase.table("transactions").select("id", count="exact").limit(1).execute()
             menu_result = supabase.table("menu_items").select("id", count="exact").limit(1).execute()
             # Get date range across all tenants
-            date_range_result = supabase.table("transactions").select("date").order("date", desc=False).limit(1).execute()
-            date_range_end_result = supabase.table("transactions").select("date").order("date", desc=True).limit(1).execute()
+            date_range_result = supabase.table("transactions").select("receipt_timestamp").order("receipt_timestamp", desc=False).limit(1).execute()
+            date_range_end_result = supabase.table("transactions").select("receipt_timestamp").order("receipt_timestamp", desc=True).limit(1).execute()
             health["note"] = "Showing aggregate counts (no tenant selected)"
         else:
             # Non-operators without tenant
@@ -979,9 +1214,9 @@ async def data_health_check(
 
         # Extract date range
         if date_range_result.data and len(date_range_result.data) > 0:
-            health["date_range"]["start"] = date_range_result.data[0]["date"]
+            health["date_range"]["start"] = date_range_result.data[0]["receipt_timestamp"]
         if date_range_end_result.data and len(date_range_end_result.data) > 0:
-            health["date_range"]["end"] = date_range_end_result.data[0]["date"]
+            health["date_range"]["end"] = date_range_end_result.data[0]["receipt_timestamp"]
     except Exception:
         health["counts"]["transactions"] = 0
         health["counts"]["menu_items"] = 0

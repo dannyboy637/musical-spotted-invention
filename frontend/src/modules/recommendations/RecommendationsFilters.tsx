@@ -36,9 +36,11 @@ export function getDateRangeForPeriod(period: PeriodOption): { startDate: string
       break
   }
 
+  const formatLocal = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   return {
-    startDate: start.toISOString().split('T')[0],
-    endDate: end.toISOString().split('T')[0],
+    startDate: formatLocal(start),
+    endDate: formatLocal(end),
   }
 }
 

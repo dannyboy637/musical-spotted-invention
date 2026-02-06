@@ -1,20 +1,25 @@
 import { QueryClient, QueryCache, MutationCache } from '@tanstack/react-query'
 import { handleApiError } from './toast'
 
-// Check if error is a 401 Unauthorized
+// Check if error is a 401 Unauthorized (handles Axios errors and plain objects)
 const isUnauthorizedError = (error: unknown): boolean => {
-  if (error instanceof Error && 'status' in error) {
-    return (error as Error & { status: number }).status === 401
-  }
   if (typeof error === 'object' && error !== null) {
     const err = error as Record<string, unknown>
-    return err.status === 401 || err.statusCode === 401
+    // Axios errors: check response.status
+    if (err.response && typeof err.response === 'object') {
+      const resp = err.response as Record<string, unknown>
+      if (resp.status === 401) return true
+    }
+    // Direct status property (AxiosError.status in axios 1.x)
+    if (err.status === 401 || err.statusCode === 401) return true
   }
   return false
 }
 
-// Handle 401 errors by redirecting to login
+// Handle 401 errors by clearing state and redirecting to login
 const handleUnauthorized = () => {
+  // Clear React Query cache to prevent stale authenticated data
+  queryClient.clear()
   // Clear any persisted auth state
   localStorage.removeItem('auth-storage')
   // Redirect to login

@@ -8,8 +8,8 @@ ANTHROPIC_API_KEY to .env to use real Claude API.
 import os
 from typing import Literal
 
-# Set to False and add ANTHROPIC_API_KEY to .env for real API
-MOCK_MODE = True
+# Set AI_MOCK_MODE=false and add ANTHROPIC_API_KEY to enable real API
+MOCK_MODE = os.getenv("AI_MOCK_MODE", "true").lower() == "true"
 
 NarrativeStyle = Literal["full", "bullets"]
 

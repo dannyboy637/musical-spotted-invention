@@ -6,6 +6,7 @@ import time
 import asyncio
 import logging
 import traceback
+import os
 from typing import Optional, Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -23,6 +24,8 @@ EXCLUDED_ENDPOINTS = {
 
 # Threshold for "slow" endpoints (ms)
 SLOW_THRESHOLD_MS = 300
+METRIC_LOG_MAX_CONCURRENCY = int(os.getenv("METRIC_LOG_MAX_CONCURRENCY", "20"))
+_metric_semaphore = asyncio.Semaphore(METRIC_LOG_MAX_CONCURRENCY)
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -65,7 +68,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
             # Log metric asynchronously (fire and forget)
             asyncio.create_task(
-                self._log_metric(
+                self._log_metric_async(
                     tenant_id=tenant_id,
                     endpoint=request.url.path,
                     method=request.method,
@@ -74,7 +77,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 )
             )
 
-    async def _log_metric(
+    async def _log_metric_async(
         self,
         tenant_id: Optional[str],
         endpoint: str,
@@ -82,7 +85,26 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         response_time_ms: int,
         status_code: int,
     ) -> None:
-        """Log metric to database asynchronously."""
+        """Log metric to database without blocking the event loop."""
+        async with _metric_semaphore:
+            await asyncio.to_thread(
+                self._log_metric_sync,
+                tenant_id,
+                endpoint,
+                method,
+                response_time_ms,
+                status_code,
+            )
+
+    def _log_metric_sync(
+        self,
+        tenant_id: Optional[str],
+        endpoint: str,
+        method: str,
+        response_time_ms: int,
+        status_code: int,
+    ) -> None:
+        """Log metric to database (sync)."""
         try:
             # Import here to avoid circular imports
             from db.supabase import supabase

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 import { useTenantStore } from '../stores/tenantStore'
+import { useFilterStore, type DateRange } from '../stores/filterStore'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -42,9 +43,81 @@ export interface AlertSettingsUpdate {
 }
 
 export interface ScanResponse {
-  alerts_created: number
-  scan_duration_ms: number
+  job_id: string
+  status: string
   message: string
+}
+
+export interface WatchlistItem {
+  id: string
+  tenant_id: string
+  item_name: string
+  revenue_drop_pct: number
+  revenue_spike_pct: number
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  created_by: string | null
+}
+
+export interface WatchlistSummaryItem {
+  id: string
+  item_name: string
+  revenue: number
+  quantity: number
+  order_count: number
+  avg_price: number
+  previous_revenue: number
+  previous_quantity: number
+  previous_order_count: number
+  revenue_change_pct: number | null
+  quantity_change_pct: number | null
+  revenue_drop_pct: number
+  revenue_spike_pct: number
+  status: 'ok' | 'drop' | 'spike' | 'new'
+}
+
+export interface WatchlistSummaryResponse {
+  items: WatchlistSummaryItem[]
+  period: {
+    start_date: string
+    end_date: string
+    previous_start_date: string
+    previous_end_date: string
+  }
+  generated_at: string
+}
+
+// Helper to build query params from filters
+function buildWatchlistParams(
+  dateRange: DateRange | null,
+  branches: string[],
+  categories: string[],
+  tenantId?: string
+): Record<string, string> {
+  const params: Record<string, string> = {}
+
+  if (tenantId) {
+    params.tenant_id = tenantId
+  }
+
+  if (dateRange) {
+    const formatLocal = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    params.start_date = formatLocal(dateRange.start)
+    params.end_date = formatLocal(dateRange.end)
+  }
+
+  if (branches.length > 0) {
+    params.branches = branches.join(',')
+  }
+
+  if (categories.length > 0) {
+    params.categories = categories.join(',')
+  }
+
+  return params
 }
 
 // Fetch alerts
@@ -151,6 +224,161 @@ export function useTriggerScan() {
       // Invalidate alerts queries to refetch
       queryClient.invalidateQueries({ queryKey: ['alerts'] })
     },
+  })
+}
+
+// Watch list hooks
+export function useWatchList() {
+  const { session } = useAuthStore()
+  const { activeTenant } = useTenantStore()
+  const accessToken = session?.access_token
+  const tenantId = activeTenant?.id
+
+  return useQuery<WatchlistItem[]>({
+    queryKey: ['watchlist', tenantId],
+    queryFn: async () => {
+      if (!accessToken) {
+        throw new Error('No access token')
+      }
+
+      const params: Record<string, string> = {}
+      if (tenantId) params.tenant_id = tenantId
+
+      const response = await axios.get<WatchlistItem[]>(`${API_URL}/api/alerts/watchlist`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params,
+      })
+
+      return response.data
+    },
+    enabled: !!accessToken,
+  })
+}
+
+export function useAddWatchItem() {
+  const { session } = useAuthStore()
+  const { activeTenant } = useTenantStore()
+  const queryClient = useQueryClient()
+
+  return useMutation<WatchlistItem, Error, {
+    item_name: string
+    revenue_drop_pct?: number
+    revenue_spike_pct?: number
+    notes?: string
+  }>({
+    mutationFn: async (payload) => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const params: Record<string, string> = {}
+      if (activeTenant?.id) params.tenant_id = activeTenant.id
+
+      const response = await axios.post<WatchlistItem>(
+        `${API_URL}/api/alerts/watchlist`,
+        payload,
+        {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          params,
+        }
+      )
+
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] })
+      queryClient.invalidateQueries({ queryKey: ['watchlist-summary'] })
+    },
+  })
+}
+
+export function useUpdateWatchItem() {
+  const { session } = useAuthStore()
+  const queryClient = useQueryClient()
+
+  return useMutation<WatchlistItem, Error, {
+    id: string
+    revenue_drop_pct?: number
+    revenue_spike_pct?: number
+    notes?: string
+    is_active?: boolean
+  }>({
+    mutationFn: async ({ id, ...updates }) => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const response = await axios.put<WatchlistItem>(
+        `${API_URL}/api/alerts/watchlist/${id}`,
+        updates,
+        {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      )
+
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] })
+      queryClient.invalidateQueries({ queryKey: ['watchlist-summary'] })
+    },
+  })
+}
+
+export function useDeleteWatchItem() {
+  const { session } = useAuthStore()
+  const queryClient = useQueryClient()
+
+  return useMutation<{ success: boolean; watch_id: string }, Error, string>({
+    mutationFn: async (id: string) => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const response = await axios.delete<{ success: boolean; watch_id: string }>(
+        `${API_URL}/api/alerts/watchlist/${id}`,
+        {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      )
+
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] })
+      queryClient.invalidateQueries({ queryKey: ['watchlist-summary'] })
+    },
+  })
+}
+
+export function useWatchListSummary() {
+  const { session } = useAuthStore()
+  const { activeTenant } = useTenantStore()
+  const { dateRange, branches, categories } = useFilterStore()
+
+  const accessToken = session?.access_token
+  const tenantId = activeTenant?.id
+
+  return useQuery<WatchlistSummaryResponse>({
+    queryKey: ['watchlist-summary', tenantId, dateRange, branches, categories],
+    queryFn: async () => {
+      if (!accessToken) {
+        throw new Error('No access token')
+      }
+
+      const params = buildWatchlistParams(dateRange, branches, categories, tenantId)
+
+      const response = await axios.get<WatchlistSummaryResponse>(
+        `${API_URL}/api/alerts/watchlist/summary`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          params,
+        }
+      )
+
+      return response.data
+    },
+    enabled: !!accessToken,
   })
 }
 

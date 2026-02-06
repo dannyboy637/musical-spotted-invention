@@ -5,6 +5,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Spinner } from '../../components/ui/Spinner'
+import { WatchListSection } from './WatchListSection'
 import {
   useAlerts,
   useDismissAlert,
@@ -429,6 +430,8 @@ export function AlertsPage() {
           ))}
         </div>
       )}
+
+      <WatchListSection />
     </div>
   )
 }

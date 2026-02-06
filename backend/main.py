@@ -23,6 +23,7 @@ from routes.alerts import router as alerts_router
 from routes.reports import router as reports_router
 from routes.operator import router as operator_router
 from routes.auto_fetch import router as auto_fetch_router
+from middleware.auth_context import AuthContextMiddleware
 from middleware.metrics import MetricsMiddleware
 from middleware.rate_limit import limiter
 from db.supabase import supabase
@@ -48,7 +49,11 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup: Clean up any stale import jobs from previous crashes
     print("Starting up...", flush=True)
-    cleanup_stale_import_jobs()
+    skip_startup_tasks = os.getenv("SKIP_STARTUP_TASKS", "false").lower() == "true"
+    if skip_startup_tasks:
+        print("Startup: Skipping startup tasks (SKIP_STARTUP_TASKS=true)", flush=True)
+    else:
+        cleanup_stale_import_jobs()
     yield
     # Shutdown
     print("Shutting down...", flush=True)
@@ -117,6 +122,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# AuthContextMiddleware - sets request.state.user/tenant_id when possible
+app.add_middleware(AuthContextMiddleware)
 
 
 @app.get("/health")

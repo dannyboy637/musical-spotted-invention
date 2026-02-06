@@ -9,6 +9,8 @@ const log = (...args: unknown[]) => isDev && console.log(...args)
 const warn = (...args: unknown[]) => isDev && console.warn(...args)
 const logError = (...args: unknown[]) => isDev && console.error(...args)
 
+let authSubscription: { unsubscribe: () => void } | null = null
+
 export type UserRole = 'operator' | 'owner' | 'viewer'
 
 export interface Tenant {
@@ -51,6 +53,9 @@ export const useAuthStore = create<AuthState>()(
       isInitialized: false,
 
       initialize: async () => {
+        if (get().isInitialized && authSubscription) {
+          return
+        }
         try {
           set({ isLoading: true })
           log('[AuthStore] Initializing...')
@@ -70,7 +75,12 @@ export const useAuthStore = create<AuthState>()(
           }
 
           // Listen for auth changes
-          supabase.auth.onAuthStateChange(async (event, session) => {
+          if (authSubscription) {
+            authSubscription.unsubscribe()
+            authSubscription = null
+          }
+
+          const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
             log('[AuthStore] Auth state changed:', event)
             set({ user: session?.user ?? null, session })
 
@@ -80,6 +90,7 @@ export const useAuthStore = create<AuthState>()(
               set({ profile: null })
             }
           })
+          authSubscription = data.subscription
         } finally {
           set({ isLoading: false, isInitialized: true })
           log('[AuthStore] Initialized')

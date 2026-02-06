@@ -73,7 +73,7 @@
   - Migration 038 - Fixed transaction unique constraint
 - **Automation:**
   - cron-job.org triggers daily at 2:00 AM Manila time
-  - Calls `POST /auto-fetch/trigger?token=xxx`
+  - Calls `POST /auto-fetch/trigger` with `Authorization: Bearer <token>` (or `X-Auto-Fetch-Token`)
   - Runs in background, handles duplicates automatically
 - **Environment Variables:** `STOREHUB_SUBDOMAIN`, `STOREHUB_USERNAME`, `STOREHUB_PASSWORD`, `TARGET_TENANT_ID`, `AUTO_FETCH_SECRET`
 
@@ -111,7 +111,7 @@
   - 30s statement timeout per function
   - Supabase client timeout: 120s (was ~10s default)
 - **Simplifications:**
-  - Removed theme toggle (dark/system modes) - light theme only
+  - Theme toggle retained (light/dark/system supported via settings store)
 - **Validation Results:**
   - All dashboard modules working
   - Data isolation verified (no cross-tenant leakage)

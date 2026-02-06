@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
+import { format, parseISO } from 'date-fns'
 import { Search, Star, TrendingUp, HelpCircle, AlertTriangle } from 'lucide-react'
 import { ChartContainer } from '../../components/charts/ChartContainer'
+import { LineChart } from '../../components/charts/LineChart'
 import { useQuadrantTimeline, useItemHistory } from '../../hooks/useAnalytics'
 import { Spinner } from '../../components/ui/Spinner'
 
@@ -28,6 +30,15 @@ export function ItemHistoryPanel() {
   const { data: itemData, isLoading: itemLoading } = useItemHistory(selectedItem)
 
   const movements = timelineData?.movements ?? []
+  const history = itemData?.history ?? []
+  const latestHistory = history.length > 0 ? history[history.length - 1] : null
+  const historyChartData = useMemo(() => {
+    if (!history.length) return []
+    return history.map((point) => ({
+      month: point.month,
+      revenue: point.revenue,
+    }))
+  }, [history])
 
   // Filter items based on search
   const filteredItems = useMemo(() => {
@@ -155,24 +166,24 @@ export function ItemHistoryPanel() {
                 </div>
 
                 {/* Stats Grid */}
-                {itemData.history.length > 0 && (
+                {latestHistory && (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-slate-50 rounded-lg p-3">
                       <p className="text-xs text-slate-500">Total Quantity</p>
                       <p className="text-lg font-bold text-slate-900">
-                        {itemData.history[0].quantity.toLocaleString()}
+                        {latestHistory.quantity.toLocaleString()}
                       </p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3">
                       <p className="text-xs text-slate-500">Total Revenue</p>
                       <p className="text-lg font-bold text-slate-900">
-                        {formatCurrency(itemData.history[0].revenue)}
+                        {formatCurrency(latestHistory.revenue)}
                       </p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3">
                       <p className="text-xs text-slate-500">Avg Price</p>
                       <p className="text-lg font-bold text-slate-900">
-                        {formatCurrency(itemData.history[0].avg_price)}
+                        {formatCurrency(latestHistory.avg_price)}
                       </p>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3">
@@ -181,6 +192,25 @@ export function ItemHistoryPanel() {
                         {itemData.quadrant_changes}
                       </p>
                     </div>
+                  </div>
+                )}
+
+                {historyChartData.length > 1 && (
+                  <div className="bg-white rounded-lg border border-slate-200 p-4">
+                    <h5 className="text-sm font-medium text-slate-700 mb-3">Monthly Revenue Trend</h5>
+                    <LineChart
+                      data={historyChartData}
+                      xKey="month"
+                      lines={[{ key: 'revenue', name: 'Revenue', color: '#1e3a5f' }]}
+                      height={220}
+                      showGrid
+                      formatY={(value) => formatCurrency(value)}
+                      formatX={(value) => format(parseISO(`${value}-01`), 'MMM yy')}
+                      formatTooltipLabel={(value) => format(parseISO(`${value}-01`), 'MMMM yyyy')}
+                    />
+                    <p className="text-xs text-slate-500 mt-2">
+                      {history.length} months tracked
+                    </p>
                   </div>
                 )}
 

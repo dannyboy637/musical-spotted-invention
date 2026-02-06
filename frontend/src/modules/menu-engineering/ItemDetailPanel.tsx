@@ -1,7 +1,10 @@
-import { X } from 'lucide-react'
+import { Eye, X } from 'lucide-react'
 import type { MenuEngineeringItem } from '../../hooks/useAnalytics'
 import { formatCurrency, formatCurrencyFull, quadrantColors } from '../../lib/chartConfig'
 import { format, parseISO } from 'date-fns'
+import { useAddWatchItem, useWatchList } from '../../hooks/useAlerts'
+import { useAuthStore } from '../../stores/authStore'
+import { Link } from 'react-router-dom'
 
 interface ItemDetailPanelProps {
   item: MenuEngineeringItem | null
@@ -10,6 +13,11 @@ interface ItemDetailPanelProps {
 
 export function ItemDetailPanel({ item, onClose }: ItemDetailPanelProps) {
   if (!item) return null
+  const { profile } = useAuthStore()
+  const canManageWatch = profile?.role === 'owner' || profile?.role === 'operator'
+  const { data: watchlist } = useWatchList()
+  const addWatchMutation = useAddWatchItem()
+  const isWatching = !!watchlist?.some((watch) => watch.item_name === item.item_name)
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '-'
@@ -63,6 +71,27 @@ export function ItemDetailPanel({ item, onClose }: ItemDetailPanelProps) {
                 {item.quadrant}
               </span>
               <span className="text-sm text-slate-500">{item.category}</span>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              {canManageWatch && (
+                <button
+                  onClick={() => addWatchMutation.mutate({ item_name: item.item_name })}
+                  disabled={addWatchMutation.isPending || isWatching}
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                    addWatchMutation.isPending
+                      ? 'border-slate-200 text-slate-400'
+                      : isWatching
+                      ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
+                      : 'border-navy-200 text-navy-700 hover:bg-navy-50'
+                  }`}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  {isWatching ? 'Watching' : 'Add to Watch List'}
+                </button>
+              )}
+              <Link to="/alerts" className="text-xs text-slate-500 hover:text-navy-600">
+                Manage watch list
+              </Link>
             </div>
           </div>
 

@@ -7,7 +7,7 @@ For historical movement analysis, use the /api/analytics/movements endpoints.
 """
 from typing import Optional, List
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from pydantic import BaseModel
 
 from middleware.auth import get_user_with_tenant, UserPayload
@@ -65,9 +65,77 @@ class AlertSettingsUpdate(BaseModel):
 
 class ScanResponse(BaseModel):
     """Response from triggering an anomaly scan."""
-    alerts_created: int
-    scan_duration_ms: int
+    job_id: str
+    status: str
     message: str
+
+
+class ScanJobStatusResponse(BaseModel):
+    """Status response for an anomaly scan job."""
+    job_id: str
+    tenant_id: str
+    status: str
+    alerts_created: Optional[int] = None
+    scan_duration_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    created_at: str
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class WatchlistItem(BaseModel):
+    """Single watched item configuration."""
+    id: str
+    tenant_id: str
+    item_name: str
+    revenue_drop_pct: int
+    revenue_spike_pct: int
+    notes: Optional[str] = None
+    is_active: bool
+    created_at: str
+    updated_at: str
+    created_by: Optional[str] = None
+
+
+class WatchlistItemCreate(BaseModel):
+    """Create a new watched item."""
+    item_name: str
+    revenue_drop_pct: Optional[int] = None
+    revenue_spike_pct: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class WatchlistItemUpdate(BaseModel):
+    """Update watched item thresholds."""
+    revenue_drop_pct: Optional[int] = None
+    revenue_spike_pct: Optional[int] = None
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class WatchlistSummaryItem(BaseModel):
+    """Summary performance for a watched item."""
+    id: str
+    item_name: str
+    revenue: int
+    quantity: int
+    order_count: int
+    avg_price: int
+    previous_revenue: int
+    previous_quantity: int
+    previous_order_count: int
+    revenue_change_pct: Optional[float] = None
+    quantity_change_pct: Optional[float] = None
+    revenue_drop_pct: int
+    revenue_spike_pct: int
+    status: str
+
+
+class WatchlistSummaryResponse(BaseModel):
+    """Summary response for watched items."""
+    items: List[WatchlistSummaryItem]
+    period: dict
+    generated_at: str
 
 
 # ============================================
@@ -80,8 +148,6 @@ def get_effective_tenant_id(user: UserPayload, tenant_id_override: str = None) -
         return tenant_id_override
     if user.tenant_id:
         return user.tenant_id
-    if tenant_id_override:
-        return tenant_id_override
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="No tenant selected"
@@ -98,6 +164,70 @@ def require_owner_or_operator(user: UserPayload, tenant_id: str):
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Only tenant owner can perform this action"
     )
+
+
+def _parse_date_param(value: Optional[str], label: str) -> Optional[datetime.date]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).date()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {label} format: {value}. Use YYYY-MM-DD."
+        ) from exc
+
+
+def _resolve_watchlist_period(
+    start_date: Optional[str],
+    end_date: Optional[str],
+) -> tuple[datetime.date, datetime.date, datetime.date, datetime.date]:
+    end = _parse_date_param(end_date, "end_date") or datetime.utcnow().date()
+    start = _parse_date_param(start_date, "start_date") or (end - timedelta(days=30))
+
+    if start > end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be on or before end_date"
+        )
+
+    period_days = (end - start).days + 1
+    prev_end = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=period_days - 1)
+
+    return start, end, prev_start, prev_end
+
+
+def _run_alert_scan_job(job_id: str, tenant_id: str) -> None:
+    """Background job to run anomaly scan and update job status."""
+    import time
+    from modules.anomaly import run_anomaly_scan
+
+    try:
+        supabase.table("alert_scan_jobs").update({
+            "status": "processing",
+            "started_at": datetime.utcnow().isoformat(),
+        }).eq("id", job_id).execute()
+
+        start_time = time.time()
+        alerts_created = run_anomaly_scan(tenant_id)
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        supabase.table("alert_scan_jobs").update({
+            "status": "completed",
+            "alerts_created": alerts_created,
+            "scan_duration_ms": duration_ms,
+            "completed_at": datetime.utcnow().isoformat(),
+        }).eq("id", job_id).execute()
+
+        # Invalidate cached alerts list so new alerts appear
+        data_cache.invalidate_prefix("alerts_list")
+    except Exception as exc:
+        supabase.table("alert_scan_jobs").update({
+            "status": "failed",
+            "error_message": str(exc),
+            "completed_at": datetime.utcnow().isoformat(),
+        }).eq("id", job_id).execute()
 
 
 # ============================================
@@ -243,6 +373,7 @@ async def dismiss_alert(
 
 @router.post("/scan", response_model=ScanResponse)
 async def trigger_scan(
+    background_tasks: BackgroundTasks,
     user: UserPayload = Depends(get_user_with_tenant),
     tenant_id: Optional[str] = None,
 ):
@@ -251,19 +382,52 @@ async def trigger_scan(
 
     Runs all detection algorithms and creates alerts for any anomalies found.
     """
-    import time
-    from modules.anomaly import run_anomaly_scan
-
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    require_owner_or_operator(user, effective_tenant_id)
 
-    start_time = time.time()
-    alerts_created = run_anomaly_scan(effective_tenant_id)
-    duration_ms = int((time.time() - start_time) * 1000)
+    # Create scan job record
+    job_result = supabase.table("alert_scan_jobs").insert({
+        "tenant_id": effective_tenant_id,
+        "status": "pending",
+        "created_by": user.sub,
+    }).execute()
+    job_id = job_result.data[0]["id"]
+    background_tasks.add_task(_run_alert_scan_job, job_id, effective_tenant_id)
 
     return ScanResponse(
-        alerts_created=alerts_created,
-        scan_duration_ms=duration_ms,
-        message=f"Scan complete. {alerts_created} new alerts created.",
+        job_id=job_id,
+        status="pending",
+        message="Scan queued. Poll /api/alerts/scan/{job_id} for status.",
+    )
+
+
+@router.get("/scan/{job_id}", response_model=ScanJobStatusResponse)
+async def get_scan_status(
+    job_id: str,
+    user: UserPayload = Depends(get_user_with_tenant),
+):
+    """Get status of an alert scan job."""
+    result = supabase.table("alert_scan_jobs").select("*").eq("id", job_id).single().execute()
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scan job not found",
+        )
+
+    job = result.data
+    require_owner_or_operator(user, job["tenant_id"])
+
+    return ScanJobStatusResponse(
+        job_id=job["id"],
+        tenant_id=job["tenant_id"],
+        status=job["status"],
+        alerts_created=job.get("alerts_created"),
+        scan_duration_ms=job.get("scan_duration_ms"),
+        error_message=job.get("error_message"),
+        created_at=job["created_at"],
+        started_at=job.get("started_at"),
+        completed_at=job.get("completed_at"),
     )
 
 
@@ -374,4 +538,284 @@ async def update_alert_settings(
         item_crash_pct=settings["item_crash_pct"],
         quadrant_alerts_enabled=settings["quadrant_alerts_enabled"],
         updated_at=settings["updated_at"],
+    )
+
+
+# ============================================
+# WATCH LIST ENDPOINTS
+# ============================================
+
+@router.get("/watchlist", response_model=List[WatchlistItem])
+async def list_watchlist_items(
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+):
+    """List watched items for a tenant."""
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+
+    result = supabase.table("watched_items") \
+        .select("*") \
+        .eq("tenant_id", effective_tenant_id) \
+        .order("created_at", desc=True) \
+        .execute()
+
+    return result.data or []
+
+
+@router.post("/watchlist", response_model=WatchlistItem)
+async def create_watchlist_item(
+    body: WatchlistItemCreate,
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+):
+    """Add an item to the watch list."""
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    require_owner_or_operator(user, effective_tenant_id)
+
+    item_name = body.item_name.strip()
+    if not item_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Item name is required"
+        )
+
+    existing = supabase.table("watched_items") \
+        .select("id") \
+        .eq("tenant_id", effective_tenant_id) \
+        .eq("item_name", item_name) \
+        .execute()
+    if existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Item already in watch list"
+        )
+
+    payload = {
+        "tenant_id": effective_tenant_id,
+        "item_name": item_name,
+        "created_by": user.sub,
+    }
+    if body.revenue_drop_pct is not None:
+        payload["revenue_drop_pct"] = body.revenue_drop_pct
+    if body.revenue_spike_pct is not None:
+        payload["revenue_spike_pct"] = body.revenue_spike_pct
+    if body.notes is not None:
+        payload["notes"] = body.notes
+
+    result = supabase.table("watched_items").insert(payload).execute()
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create watch list item"
+        )
+
+    data_cache.invalidate_prefix("watchlist_summary")
+
+    return result.data[0]
+
+
+@router.put("/watchlist/{watch_id}", response_model=WatchlistItem)
+async def update_watchlist_item(
+    watch_id: str,
+    body: WatchlistItemUpdate,
+    user: UserPayload = Depends(get_user_with_tenant),
+):
+    """Update thresholds or notes for a watched item."""
+    existing = supabase.table("watched_items") \
+        .select("*") \
+        .eq("id", watch_id) \
+        .single() \
+        .execute()
+
+    if not existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Watched item not found"
+        )
+
+    watch_item = existing.data
+    require_owner_or_operator(user, watch_item["tenant_id"])
+
+    update_data = {}
+    if body.revenue_drop_pct is not None:
+        update_data["revenue_drop_pct"] = body.revenue_drop_pct
+    if body.revenue_spike_pct is not None:
+        update_data["revenue_spike_pct"] = body.revenue_spike_pct
+    if body.notes is not None:
+        update_data["notes"] = body.notes
+    if body.is_active is not None:
+        update_data["is_active"] = body.is_active
+
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update"
+        )
+
+    result = supabase.table("watched_items") \
+        .update(update_data) \
+        .eq("id", watch_id) \
+        .execute()
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update watch list item"
+        )
+
+    data_cache.invalidate_prefix("watchlist_summary")
+
+    return result.data[0]
+
+
+@router.delete("/watchlist/{watch_id}")
+async def delete_watchlist_item(
+    watch_id: str,
+    user: UserPayload = Depends(get_user_with_tenant),
+):
+    """Remove an item from the watch list."""
+    existing = supabase.table("watched_items") \
+        .select("tenant_id") \
+        .eq("id", watch_id) \
+        .single() \
+        .execute()
+
+    if not existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Watched item not found"
+        )
+
+    require_owner_or_operator(user, existing.data["tenant_id"])
+
+    supabase.table("watched_items") \
+        .delete() \
+        .eq("id", watch_id) \
+        .execute()
+
+    data_cache.invalidate_prefix("watchlist_summary")
+
+    return {"success": True, "watch_id": watch_id}
+
+
+@router.get("/watchlist/summary", response_model=WatchlistSummaryResponse)
+async def get_watchlist_summary(
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    branches: Optional[str] = None,
+    categories: Optional[str] = None,
+):
+    """Get watched items performance summary with period-over-period comparison."""
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    start_dt, end_dt, prev_start, prev_end = _resolve_watchlist_period(start_date, end_date)
+
+    branch_list = branches.split(",") if branches else None
+    category_list = categories.split(",") if categories else None
+
+    watch_result = supabase.table("watched_items") \
+        .select("*") \
+        .eq("tenant_id", effective_tenant_id) \
+        .eq("is_active", True) \
+        .execute()
+
+    watch_items = watch_result.data or []
+    if not watch_items:
+        return WatchlistSummaryResponse(
+            items=[],
+            period={
+                "start_date": start_dt.isoformat(),
+                "end_date": end_dt.isoformat(),
+                "previous_start_date": prev_start.isoformat(),
+                "previous_end_date": prev_end.isoformat(),
+            },
+            generated_at=datetime.utcnow().isoformat(),
+        )
+
+    item_names = [item["item_name"] for item in watch_items]
+
+    current_result = supabase.rpc("get_watched_items_summary_v1", {
+        "p_tenant_id": effective_tenant_id,
+        "p_item_names": item_names,
+        "p_start_date": start_dt.isoformat(),
+        "p_end_date": end_dt.isoformat(),
+        "p_branches": branch_list,
+        "p_categories": category_list,
+    }).execute()
+
+    previous_result = supabase.rpc("get_watched_items_summary_v1", {
+        "p_tenant_id": effective_tenant_id,
+        "p_item_names": item_names,
+        "p_start_date": prev_start.isoformat(),
+        "p_end_date": prev_end.isoformat(),
+        "p_branches": branch_list,
+        "p_categories": category_list,
+    }).execute()
+
+    current_map = {row.get("item_name"): row for row in (current_result.data or [])}
+    prev_map = {row.get("item_name"): row for row in (previous_result.data or [])}
+
+    summary_items: list[WatchlistSummaryItem] = []
+    for watch_item in watch_items:
+        name = watch_item.get("item_name")
+        current = current_map.get(name, {}) if name else {}
+        previous = prev_map.get(name, {}) if name else {}
+
+        current_revenue = int(current.get("total_revenue", 0) or 0)
+        current_quantity = int(current.get("total_quantity", 0) or 0)
+        current_orders = int(current.get("order_count", 0) or 0)
+        current_avg_price = int(current.get("avg_price", 0) or 0)
+
+        previous_revenue = int(previous.get("total_revenue", 0) or 0)
+        previous_quantity = int(previous.get("total_quantity", 0) or 0)
+        previous_orders = int(previous.get("order_count", 0) or 0)
+
+        revenue_change_pct = None
+        quantity_change_pct = None
+
+        if previous_revenue > 0:
+            revenue_change_pct = round(((current_revenue - previous_revenue) / previous_revenue) * 100, 1)
+        if previous_quantity > 0:
+            quantity_change_pct = round(((current_quantity - previous_quantity) / previous_quantity) * 100, 1)
+
+        revenue_drop_pct = int(watch_item.get("revenue_drop_pct", 20) or 20)
+        revenue_spike_pct = int(watch_item.get("revenue_spike_pct", 50) or 50)
+
+        status = "ok"
+        if revenue_change_pct is None:
+            status = "new" if current_revenue > 0 else "ok"
+        elif revenue_change_pct >= revenue_spike_pct:
+            status = "spike"
+        elif revenue_change_pct <= -revenue_drop_pct:
+            status = "drop"
+
+        summary_items.append(WatchlistSummaryItem(
+            id=watch_item["id"],
+            item_name=name,
+            revenue=current_revenue,
+            quantity=current_quantity,
+            order_count=current_orders,
+            avg_price=current_avg_price,
+            previous_revenue=previous_revenue,
+            previous_quantity=previous_quantity,
+            previous_order_count=previous_orders,
+            revenue_change_pct=revenue_change_pct,
+            quantity_change_pct=quantity_change_pct,
+            revenue_drop_pct=revenue_drop_pct,
+            revenue_spike_pct=revenue_spike_pct,
+            status=status,
+        ))
+
+    summary_items.sort(key=lambda item: item.revenue, reverse=True)
+
+    return WatchlistSummaryResponse(
+        items=summary_items,
+        period={
+            "start_date": start_dt.isoformat(),
+            "end_date": end_dt.isoformat(),
+            "previous_start_date": prev_start.isoformat(),
+            "previous_end_date": prev_end.isoformat(),
+        },
+        generated_at=datetime.utcnow().isoformat(),
     )

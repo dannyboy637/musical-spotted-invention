@@ -2,11 +2,13 @@ import { useState, useMemo } from 'react'
 import { ChartContainer } from '../../components/charts/ChartContainer'
 import { LineChart } from '../../components/charts/LineChart'
 import { usePerformanceTrends } from '../../hooks/useAnalytics'
+import { useUIStore } from '../../stores/uiStore'
 import { formatCurrency, chartColors } from '../../lib/chartConfig'
 import { format, parseISO } from 'date-fns'
 
 export function RevenueTrendChart() {
   const { data, isLoading, error, refetch } = usePerformanceTrends()
+  const { openDayDeepDive } = useUIStore()
   const [showDailyAvg, setShowDailyAvg] = useState(false)
   const [showMovingAvg, setShowMovingAvg] = useState(false)
 
@@ -44,6 +46,13 @@ export function RevenueTrendChart() {
       return format(parseISO(dateStr), 'MMM d')
     } catch {
       return dateStr
+    }
+  }
+
+  const handleDataPointClick = (dataPoint: Record<string, string | number>) => {
+    const date = dataPoint.date as string
+    if (date) {
+      openDayDeepDive(date)
     }
   }
 
@@ -110,6 +119,7 @@ export function RevenueTrendChart() {
           showGrid
           showLegend={showMovingAvg}
           referenceLines={referenceLines}
+          onDataPointClick={handleDataPointClick}
         />
       </div>
     </ChartContainer>

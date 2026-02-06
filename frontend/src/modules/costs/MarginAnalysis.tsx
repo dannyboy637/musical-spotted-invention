@@ -6,15 +6,16 @@ import { generateMockCosts, calculateMargin, getMarginStatus } from './mockCostD
 
 interface MarginAnalysisProps {
   costOverrides: Record<string, number>
+  useMockCosts: boolean
 }
 
-export function MarginAnalysis({ costOverrides }: MarginAnalysisProps) {
+export function MarginAnalysis({ costOverrides, useMockCosts }: MarginAnalysisProps) {
   const { data, isLoading, error, refetch } = useMenuEngineering()
 
   const marginDistribution = useMemo(() => {
     if (!data?.items) return []
 
-    const withMockCosts = generateMockCosts(data.items)
+    const withMockCosts = useMockCosts ? generateMockCosts(data.items) : data.items
     const items = withMockCosts.map((item) => ({
       ...item,
       cost_cents: costOverrides[item.item_name] ?? item.cost_cents,

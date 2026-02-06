@@ -70,7 +70,7 @@ VITE_SUPABASE_ANON_KEY=...
 ### Multi-Tenant Design
 - All tenants share the same codebase
 - Data isolation via Row-Level Security (RLS) policies filtering by `tenant_id`
-- JWT middleware extracts tenant context on every request
+- Auth context middleware extracts tenant context on every request
 
 ### User Roles
 | Role | Access |
@@ -84,7 +84,8 @@ VITE_SUPABASE_ANON_KEY=...
 backend/
 ├── main.py                  # FastAPI app entry, CORS config
 ├── db/supabase.py           # Supabase client singleton
-├── middleware/auth.py       # JWT validation, tenant context extraction
+├── middleware/auth.py       # JWT validation utilities
+├── middleware/auth_context.py  # Request.state user/tenant enrichment
 ├── modules/
 │   ├── data_processing.py   # Legacy business logic (categories, service charge allocation)
 │   └── anomaly.py           # Anomaly detection algorithms
@@ -94,7 +95,7 @@ backend/
 │   ├── data.py              # /data/* CSV upload, transactions, menu-items
 │   ├── analytics.py         # /api/analytics/* dashboard data (11 endpoints)
 │   └── alerts.py            # /api/alerts/* alert management
-├── migrations/              # SQL migrations (000-012), run manually in Supabase
+├── migrations/              # SQL migrations (000-047), run manually in Supabase
 └── scripts/import_storehub.py  # CLI data import tool
 ```
 

@@ -105,6 +105,40 @@ export function QuadrantSummaryCard() {
           </div>
         </div>
       )}
+
+      {data?.changes && data.changes.length > 0 && (
+        <div className="mt-6 pt-6 border-t border-slate-200">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h4 className="text-sm font-medium text-slate-700">Recent Quadrant Shifts</h4>
+            {data.latest_month && data.prior_month && (
+              <span className="text-xs text-slate-500">
+                {data.prior_month} → {data.latest_month}
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {data.changes.slice(0, 6).map((change) => (
+              <div
+                key={`${change.item_name}-${change.change}`}
+                className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">{change.item_name}</p>
+                  <p className="text-xs text-slate-500">{change.change}</p>
+                </div>
+                <div className="text-xs text-slate-600 font-medium">
+                  {(change.total_revenue / 100).toLocaleString('en-PH', {
+                    style: 'currency',
+                    currency: 'PHP',
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </ChartContainer>
   )
 }

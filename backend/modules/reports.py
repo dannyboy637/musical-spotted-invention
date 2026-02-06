@@ -247,50 +247,23 @@ def _get_kpis(tenant_id: str, start_date: str, end_date: str) -> dict:
 
 def _get_top_items(tenant_id: str, start_date: str, end_date: str, limit: int = 5) -> List[dict]:
     """Get top items by revenue for the period."""
-    # Query transactions aggregated by item
-    result = supabase.table("transactions").select(
-        "item_name, category"
-    ).eq("tenant_id", tenant_id).gte(
-        "receipt_timestamp", start_date
-    ).lte(
-        "receipt_timestamp", f"{end_date}T23:59:59"
-    ).eq("is_excluded", False).execute()
+    result = supabase.rpc("get_item_totals_v2", {
+        "p_tenant_id": tenant_id,
+        "p_start_date": start_date,
+        "p_end_date": end_date,
+        "p_exclude_excluded": True,
+    }).execute()
 
-    if not result.data:
-        return []
-
-    # Aggregate in Python (since we need to SUM across rows)
-    item_totals = {}
-    for row in result.data:
-        item_name = row.get("item_name", "Unknown")
-        if item_name not in item_totals:
-            item_totals[item_name] = {
-                "item_name": item_name,
-                "category": row.get("category", "Uncategorized"),
-                "count": 0,
-            }
-        item_totals[item_name]["count"] += 1
-
-    # Get menu_items for revenue data
-    menu_result = supabase.table("menu_items").select(
-        "item_name, total_gross_revenue, total_quantity"
-    ).eq("tenant_id", tenant_id).eq("is_excluded", False).execute()
-
-    menu_data = {m["item_name"]: m for m in (menu_result.data or [])}
-
-    # Enhance with revenue data
+    items_data = result.data or []
     items = []
-    for item_name, item_data in item_totals.items():
-        menu_item = menu_data.get(item_name, {})
+    for row in items_data:
         items.append({
-            "item_name": item_name,
-            "category": item_data["category"],
-            "revenue": menu_item.get("total_gross_revenue", 0),
-            "quantity": menu_item.get("total_quantity", 0),
+            "item_name": row.get("item_name", "Unknown"),
+            "category": row.get("category", "Uncategorized"),
+            "revenue": row.get("total_revenue", 0) or 0,
+            "quantity": row.get("total_quantity", 0) or 0,
         })
 
-    # Sort by revenue descending
-    items.sort(key=lambda x: x["revenue"], reverse=True)
     return items[:limit]
 
 
@@ -311,37 +284,31 @@ def _get_movers(tenant_id: str, start_date: str, end_date: str) -> tuple[list, l
     # Note: For accurate period comparison, we'd need transaction-level aggregation
     # For now, use menu_items as a baseline
 
-    # Get items sold in current period
-    current_result = supabase.table("transactions").select(
-        "item_name, gross_revenue"
-    ).eq("tenant_id", tenant_id).gte(
-        "receipt_timestamp", start_date
-    ).lte(
-        "receipt_timestamp", f"{end_date}T23:59:59"
-    ).eq("is_excluded", False).execute()
+    # Get item revenue for current period using the item_totals RPC (SQL-side aggregation)
+    current_result = supabase.rpc("get_item_totals_v2", {
+        "p_tenant_id": tenant_id,
+        "p_start_date": start_date,
+        "p_end_date": end_date,
+        "p_exclude_excluded": True,
+    }).execute()
 
     current_items = {}
     for row in (current_result.data or []):
         item_name = row.get("item_name", "Unknown")
-        if item_name not in current_items:
-            current_items[item_name] = 0
-        current_items[item_name] += row.get("gross_revenue", 0)
+        current_items[item_name] = row.get("total_revenue", 0) or 0
 
-    # Get items sold in previous period
-    prev_result = supabase.table("transactions").select(
-        "item_name, gross_revenue"
-    ).eq("tenant_id", tenant_id).gte(
-        "receipt_timestamp", prev_start.strftime("%Y-%m-%d")
-    ).lte(
-        "receipt_timestamp", f"{prev_end.strftime('%Y-%m-%d')}T23:59:59"
-    ).eq("is_excluded", False).execute()
+    # Get item revenue for previous period
+    prev_result = supabase.rpc("get_item_totals_v2", {
+        "p_tenant_id": tenant_id,
+        "p_start_date": prev_start.strftime("%Y-%m-%d"),
+        "p_end_date": prev_end.strftime("%Y-%m-%d"),
+        "p_exclude_excluded": True,
+    }).execute()
 
     prev_items = {}
     for row in (prev_result.data or []):
         item_name = row.get("item_name", "Unknown")
-        if item_name not in prev_items:
-            prev_items[item_name] = 0
-        prev_items[item_name] += row.get("gross_revenue", 0)
+        prev_items[item_name] = row.get("total_revenue", 0) or 0
 
     # Calculate changes
     all_items = set(current_items.keys()) | set(prev_items.keys())

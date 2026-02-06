@@ -13,58 +13,6 @@ from utils.cache import data_cache
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
-# Supabase has a server-side limit of 1000 rows per request
-# This helper fetches all rows using pagination
-SUPABASE_PAGE_SIZE = 1000
-
-
-def fetch_all_transactions(
-    tenant_id: str,
-    filters: "AnalyticsFilters",
-    select_columns: str,
-    max_rows: int = 500000
-) -> list:
-    """
-    Fetch all transaction rows using pagination.
-
-    Supabase limits responses to 1000 rows by default.
-    This function paginates through all results.
-    """
-    all_data = []
-    offset = 0
-
-    while offset < max_rows:
-        # Build fresh query for each page
-        query = supabase.table("transactions").select(select_columns)
-        query = query.eq("tenant_id", tenant_id)
-
-        # Apply filters
-        if filters.start_date:
-            query = query.gte("receipt_timestamp", filters.start_date)
-        if filters.end_date:
-            query = query.lte("receipt_timestamp", f"{filters.end_date}T23:59:59")
-        if filters.branches:
-            query = query.in_("store_name", filters.branches)
-        if filters.categories:
-            query = query.in_("category", filters.categories)
-
-        # Add pagination
-        result = query.range(offset, offset + SUPABASE_PAGE_SIZE - 1).execute()
-
-        if not result.data:
-            break
-
-        all_data.extend(result.data)
-
-        # If we got fewer rows than page size, we've reached the end
-        if len(result.data) < SUPABASE_PAGE_SIZE:
-            break
-
-        offset += SUPABASE_PAGE_SIZE
-
-    return all_data
-
-
 # ============================================
 # COMMON FILTER PARSING
 # ============================================
@@ -123,10 +71,6 @@ def get_effective_tenant_id(user: UserPayload, tenant_id_override: str = None) -
     # For all users, use their assigned tenant
     if user.tenant_id:
         return user.tenant_id
-
-    # Fallback: check if override was provided (for any role)
-    if tenant_id_override:
-        return tenant_id_override
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -208,6 +152,23 @@ class HourlyHeatmapData(BaseModel):
 class HourlyHeatmapResponse(BaseModel):
     """Hourly heatmap response."""
     data: List[HourlyHeatmapData]
+    filters_applied: dict
+    generated_at: str
+
+
+class DailyBreakdownItem(BaseModel):
+    """Daily revenue reconciliation breakdown."""
+    date: str
+    net_sales: int
+    tax: int
+    service_charge: int
+    discounts: int
+    transactions: int
+
+
+class DailyBreakdownResponse(BaseModel):
+    """Daily breakdown response."""
+    days: List[DailyBreakdownItem]
     filters_applied: dict
     generated_at: str
 
@@ -454,14 +415,26 @@ async def get_overview(
         categories=str(filters.categories),
     )
 
-    # Get unique_items from menu_items table (v2 summary tables don't track this)
+    # Get unique_items from transactions within the filtered date range
     unique_items = 0
     try:
-        menu_query = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", effective_tenant_id)
-        if filters.categories:
-            menu_query = menu_query.in_("category", filters.categories)
-        menu_result = menu_query.limit(1).execute()
-        unique_items = menu_result.count or 0
+        unique_result = supabase.rpc("get_analytics_unique_items_v2", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+        }).execute()
+        unique_data = unique_result.data
+        if isinstance(unique_data, int):
+            unique_items = unique_data
+        elif isinstance(unique_data, list) and unique_data:
+            if isinstance(unique_data[0], dict):
+                unique_items = unique_data[0].get("unique_items", 0) or unique_data[0].get("count", 0) or 0
+            else:
+                unique_items = unique_data[0] or 0
+        elif isinstance(unique_data, dict):
+            unique_items = unique_data.get("unique_items", 0) or 0
     except Exception:
         pass  # Fall back to 0 on error
 
@@ -566,30 +539,20 @@ async def get_menu_engineering(
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    # Get menu items
-    query = supabase.table("menu_items").select("*").eq("tenant_id", effective_tenant_id)
-
-    if core_only:
-        query = query.eq("is_core_menu", True)
-    if current_only:
-        query = query.eq("is_current_menu", True)
-    if filters.categories:
-        query = query.in_("category", filters.categories)
-    if macro_category and macro_category != 'ALL':
-        query = query.eq("macro_category", macro_category)
-
-    # Exclude items marked as excluded from analysis
-    query = query.eq("is_excluded", False)
-
-    # Apply price and quantity filters at database level where possible
-    if min_price is not None:
-        query = query.gte("avg_price", min_price)
-    if max_price is not None:
-        query = query.lte("avg_price", max_price)
-    if min_quantity is not None:
-        query = query.gte("total_quantity", min_quantity)
-
-    result = query.order("total_gross_revenue", desc=True).execute()
+    result = supabase.rpc("get_item_totals_v2", {
+        "p_tenant_id": effective_tenant_id,
+        "p_start_date": filters.start_date,
+        "p_end_date": filters.end_date,
+        "p_branches": filters.branches,
+        "p_categories": filters.categories,
+        "p_macro_category": macro_category,
+        "p_core_only": core_only,
+        "p_current_only": current_only,
+        "p_min_price": min_price,
+        "p_max_price": max_price,
+        "p_min_quantity": min_quantity,
+        "p_exclude_excluded": True,
+    }).execute()
     data = result.data or []
 
     if not data:
@@ -603,8 +566,8 @@ async def get_menu_engineering(
         )
 
     # Calculate medians from FILTERED data
-    quantities = sorted([row.get("total_quantity", 0) for row in data])
-    prices = sorted([row.get("avg_price", 0) for row in data])
+    quantities = sorted([row.get("total_quantity", 0) or 0 for row in data])
+    prices = sorted([row.get("avg_price", 0) or 0 for row in data])
 
     mid = len(quantities) // 2
     median_quantity = quantities[mid] if len(quantities) % 2 else (quantities[mid-1] + quantities[mid]) / 2
@@ -616,8 +579,8 @@ async def get_menu_engineering(
 
     for row in data:
         # Calculate quadrant based on filtered medians (not pre-stored value)
-        item_quantity = row.get("total_quantity", 0)
-        item_price = row.get("avg_price", 0)
+        item_quantity = row.get("total_quantity", 0) or 0
+        item_price = row.get("avg_price", 0) or 0
         quadrant = calculate_quadrant(item_quantity, item_price, median_quantity, median_price)
 
         quadrant_counts[quadrant] += 1
@@ -628,11 +591,11 @@ async def get_menu_engineering(
             macro_category=row.get("macro_category") or "OTHER",
             quadrant=quadrant,
             total_quantity=item_quantity,
-            total_revenue=row.get("total_gross_revenue", 0),
+            total_revenue=row.get("total_revenue", 0) or 0,
             avg_price=item_price,
-            order_count=row.get("order_count", 0),
-            is_core_menu=row.get("is_core_menu", False),
-            is_current_menu=row.get("is_current_menu", False),
+            order_count=row.get("order_count", 0) or 0,
+            is_core_menu=row.get("is_core_menu") or False,
+            is_current_menu=row.get("is_current_menu") or False,
             first_sale_date=row.get("first_sale_date"),
             last_sale_date=row.get("last_sale_date"),
             cost_cents=row.get("cost_cents"),
@@ -915,8 +878,17 @@ async def get_categories(
     filters = parse_filters(start_date, end_date, branches, None)  # Don't filter by category here
 
     def fetch_categories():
-        # Note: v2 function uses summary tables which are pre-filtered (is_excluded=false)
-        # The include_excluded parameter is not supported in v2
+        # v2 uses summary tables which exclude is_excluded items.
+        # If include_excluded is requested, fall back to the v1 function.
+        if include_excluded:
+            return supabase.rpc("get_analytics_categories", {
+                "p_tenant_id": effective_tenant_id,
+                "p_start_date": filters.start_date,
+                "p_end_date": filters.end_date,
+                "p_branches": filters.branches,
+                "p_include_excluded": True,
+            }).execute().data or {}
+
         return supabase.rpc("get_analytics_categories_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
@@ -932,6 +904,7 @@ async def get_categories(
         start_date=filters.start_date,
         end_date=filters.end_date,
         branches=str(filters.branches),
+        include_excluded=include_excluded,
     )
     categories_data = data.get("categories") or []
 
@@ -980,51 +953,30 @@ async def get_category_items(
     filters = parse_filters(start_date, end_date, branches, None)
 
     def fetch_category_items():
-        # Query transactions directly to support branch filtering
-        data = fetch_all_transactions(
-            effective_tenant_id,
-            AnalyticsFilters(
-                start_date=filters.start_date,
-                end_date=filters.end_date,
-                branches=filters.branches,
-                categories=[category]  # Filter to specific category
-            ),
-            "item_name, gross_revenue, quantity",
-            max_rows=100000
-        )
+        result = supabase.rpc("get_item_totals_v2", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": [category],
+        }).execute()
 
-        # Aggregate by item
-        item_totals = {}
-        total_revenue = 0
-        total_quantity = 0
-
-        for row in data:
-            item_name = row.get("item_name", "Unknown")
-            revenue = row.get("gross_revenue", 0) or 0
-            qty = row.get("quantity", 0) or 0
-
-            if item_name not in item_totals:
-                item_totals[item_name] = {"revenue": 0, "quantity": 0}
-
-            item_totals[item_name]["revenue"] += revenue
-            item_totals[item_name]["quantity"] += qty
-            total_revenue += revenue
-            total_quantity += qty
+        items_data = result.data or []
+        total_revenue = sum((row.get("total_revenue", 0) or 0) for row in items_data)
+        total_quantity = sum((row.get("total_quantity", 0) or 0) for row in items_data)
 
         # Build items list sorted by revenue descending
         items = []
-        for item_name, totals in sorted(
-            item_totals.items(),
-            key=lambda x: x[1]["revenue"],
-            reverse=True
-        ):
-            pct = (totals["revenue"] / total_revenue * 100) if total_revenue > 0 else 0
-            avg_price = totals["revenue"] / totals["quantity"] if totals["quantity"] > 0 else 0
+        for row in sorted(items_data, key=lambda x: x.get("total_revenue", 0) or 0, reverse=True):
+            revenue = row.get("total_revenue", 0) or 0
+            quantity = row.get("total_quantity", 0) or 0
+            pct = (revenue / total_revenue * 100) if total_revenue > 0 else 0
+            avg_price = (revenue / quantity) if quantity > 0 else 0
 
             items.append({
-                "item_name": item_name,
-                "quantity": totals["quantity"],
-                "revenue": totals["revenue"],
+                "item_name": row.get("item_name", "Unknown"),
+                "quantity": quantity,
+                "revenue": revenue,
                 "avg_price": round(avg_price, 2),
                 "percentage_of_category": round(pct, 1),
             })
@@ -1082,87 +1034,32 @@ async def get_category_by_branch(
     filters = parse_filters(start_date, end_date, None, None)
 
     def fetch_category_by_branch():
-        # Query transactions grouped by branch
-        data = fetch_all_transactions(
-            effective_tenant_id,
-            AnalyticsFilters(
-                start_date=filters.start_date,
-                end_date=filters.end_date,
-                branches=None,  # Get all branches
-                categories=[category]
-            ),
-            "store_name, item_name, gross_revenue, quantity",
-            max_rows=100000
-        )
+        result = supabase.rpc("get_analytics_category_by_branch_v2", {
+            "p_tenant_id": effective_tenant_id,
+            "p_category": category,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+        }).execute()
 
-        # Aggregate by branch
-        branch_totals = {}
-        branch_items = {}  # Track items per branch for top item
+        data = result.data or {}
+        branches_data = data.get("branches") or []
 
-        for row in data:
-            branch = row.get("store_name", "Unknown")
-            item_name = row.get("item_name", "Unknown")
-            revenue = row.get("gross_revenue", 0) or 0
-            qty = row.get("quantity", 0) or 0
-
-            if branch not in branch_totals:
-                branch_totals[branch] = {"revenue": 0, "quantity": 0, "items": set()}
-                branch_items[branch] = {}
-
-            branch_totals[branch]["revenue"] += revenue
-            branch_totals[branch]["quantity"] += qty
-            branch_totals[branch]["items"].add(item_name)
-
-            # Track item revenue for top item
-            if item_name not in branch_items[branch]:
-                branch_items[branch][item_name] = 0
-            branch_items[branch][item_name] += revenue
-
-        # Get total revenue per branch (all categories) for percentage calculation
-        # This requires a separate query
-        all_branch_data = fetch_all_transactions(
-            effective_tenant_id,
-            AnalyticsFilters(
-                start_date=filters.start_date,
-                end_date=filters.end_date,
-                branches=None,
-                categories=None
-            ),
-            "store_name, gross_revenue",
-            max_rows=200000
-        )
-
-        branch_total_revenue = {}
-        for row in all_branch_data:
-            branch = row.get("store_name", "Unknown")
-            revenue = row.get("gross_revenue", 0) or 0
-            if branch not in branch_total_revenue:
-                branch_total_revenue[branch] = 0
-            branch_total_revenue[branch] += revenue
-
-        # Build response
         branches = []
-        for branch, totals in sorted(
-            branch_totals.items(),
-            key=lambda x: x[1]["revenue"],
-            reverse=True
-        ):
-            total_rev = branch_total_revenue.get(branch, 0)
-            pct = (totals["revenue"] / total_rev * 100) if total_rev > 0 else 0
-            avg_price = totals["revenue"] / totals["quantity"] if totals["quantity"] > 0 else 0
-
-            # Find top item
-            items_by_rev = branch_items.get(branch, {})
-            top_item = max(items_by_rev.items(), key=lambda x: x[1])[0] if items_by_rev else "N/A"
+        for row in branches_data:
+            revenue = row.get("revenue", 0) or 0
+            quantity = row.get("quantity", 0) or 0
+            total_rev = row.get("total_branch_revenue", 0) or 0
+            pct = (revenue / total_rev * 100) if total_rev > 0 else 0
+            avg_price = (revenue / quantity) if quantity > 0 else 0
 
             branches.append({
-                "branch": branch,
-                "revenue": totals["revenue"],
-                "quantity": totals["quantity"],
+                "branch": row.get("branch", "Unknown"),
+                "revenue": revenue,
+                "quantity": quantity,
                 "avg_price": round(avg_price, 2),
-                "item_count": len(totals["items"]),
+                "item_count": row.get("item_count", 0) or 0,
                 "percentage_of_branch": round(pct, 1),
-                "top_item": top_item,
+                "top_item": row.get("top_item") or "N/A",
             })
 
         return {"branches": branches}
@@ -1371,6 +1268,62 @@ async def get_performance_trends(
         weekly=weekly_list,
         monthly=monthly_list,
         growth_metrics=growth_metrics,
+        filters_applied=filters.model_dump(exclude_none=True),
+        generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+@router.get("/daily-breakdown", response_model=DailyBreakdownResponse)
+async def get_daily_breakdown(
+    user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    branches: Optional[str] = None,
+    categories: Optional[str] = None,
+):
+    """
+    Get daily revenue breakdown for reconciliation.
+
+    Returns net sales, tax, service charge, discounts, and transaction counts by date.
+    """
+    effective_tenant_id = get_effective_tenant_id(user, tenant_id)
+    filters = parse_filters(start_date, end_date, branches, categories)
+
+    def fetch_breakdown():
+        return supabase.rpc("get_analytics_daily_breakdown_v2", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+        }).execute().data or []
+
+    data = data_cache.get_or_fetch(
+        prefix="analytics_daily_breakdown",
+        fetch_fn=fetch_breakdown,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+    )
+
+    days = [
+        DailyBreakdownItem(
+            date=str(d.get("sale_date")),
+            net_sales=d.get("net_sales", 0) or 0,
+            tax=d.get("tax", 0) or 0,
+            service_charge=d.get("service_charge", 0) or 0,
+            discounts=d.get("discounts", 0) or 0,
+            transactions=d.get("transactions", 0) or 0,
+        )
+        for d in data
+    ]
+
+    return DailyBreakdownResponse(
+        days=days,
         filters_applied=filters.model_dump(exclude_none=True),
         generated_at=datetime.utcnow().isoformat(),
     )
@@ -1657,10 +1610,23 @@ class QuadrantMovement(BaseModel):
     total_revenue: int  # cents
 
 
+class QuadrantChange(BaseModel):
+    """Item that shifted quadrants between the last two months."""
+    item_name: str
+    from_quadrant: str
+    to_quadrant: str
+    change: str
+    total_quantity: int
+    total_revenue: int
+
+
 class QuadrantTimelineResponse(BaseModel):
     """Quadrant movements over time."""
     movements: List[QuadrantMovement]
     summary: dict  # Counts of movements between quadrants
+    changes: Optional[List[QuadrantChange]] = None
+    latest_month: Optional[str] = None
+    prior_month: Optional[str] = None
     filters_applied: dict
     generated_at: str
 
@@ -1744,66 +1710,54 @@ async def get_quadrant_timeline(
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    # Get monthly trend data to calculate quadrants per month
-    result = supabase.rpc("get_analytics_trends_v2", {
+    result = supabase.rpc("get_item_monthly_quadrants_v1", {
         "p_tenant_id": effective_tenant_id,
         "p_start_date": filters.start_date,
         "p_end_date": filters.end_date,
         "p_branches": filters.branches,
         "p_categories": filters.categories,
+        "p_item_name": item_name,
     }).execute()
 
-    data = result.data or {}
-    monthly_list = data.get("monthly") or []
+    rows = result.data or []
 
-    # Get menu items for the item data
-    menu_query = supabase.table("menu_items").select(
-        "item_name, category, total_quantity, avg_price, total_gross_revenue"
-    ).eq("tenant_id", effective_tenant_id).eq("is_excluded", False)
-
-    if filters.categories:
-        menu_query = menu_query.in_("category", filters.categories)
-    if item_name:
-        menu_query = menu_query.eq("item_name", item_name)
-
-    menu_result = menu_query.order("total_gross_revenue", desc=True).limit(100).execute()
-    menu_items = menu_result.data or []
-
-    if not menu_items:
+    if not rows:
         return QuadrantTimelineResponse(
             movements=[],
-            summary={"star_to_dog": 0, "dog_to_star": 0, "total_changes": 0},
+            summary={
+                "star_count": 0,
+                "plowhorse_count": 0,
+                "puzzle_count": 0,
+                "dog_count": 0,
+                "total_items": 0,
+                "total_changes": 0,
+            },
             filters_applied=filters.model_dump(exclude_none=True),
             generated_at=datetime.utcnow().isoformat(),
         )
 
-    # Calculate medians for quadrant assignment
-    quantities = sorted([row.get("total_quantity", 0) for row in menu_items])
-    prices = sorted([row.get("avg_price", 0) for row in menu_items])
+    months = sorted({row.get("month") for row in rows if row.get("month")})
+    latest_month = months[-1] if months else None
+    prior_month = months[-2] if len(months) > 1 else None
 
-    mid = len(quantities) // 2
-    median_quantity = quantities[mid] if len(quantities) % 2 else (quantities[mid-1] + quantities[mid]) / 2
-    median_price = prices[mid] if len(prices) % 2 else (prices[mid-1] + prices[mid]) / 2
+    latest_rows = [row for row in rows if row.get("month") == latest_month]
+    prior_rows = [row for row in rows if row.get("month") == prior_month] if prior_month else []
+    prior_map = {row.get("item_name"): row for row in prior_rows if row.get("item_name")}
 
-    # Build movement records for each item
-    movements = []
-    for item in menu_items:
-        item_quantity = item.get("total_quantity", 0)
-        item_price = item.get("avg_price", 0)
-        quadrant = calculate_quadrant(item_quantity, item_price, median_quantity, median_price)
+    latest_rows.sort(key=lambda r: r.get("total_revenue", 0) or 0, reverse=True)
 
-        # For now, we use current data as the latest month
-        # In a full implementation, we'd query transactions grouped by month
-        movements.append(QuadrantMovement(
-            item_name=item.get("item_name", "Unknown"),
-            month=datetime.utcnow().strftime("%Y-%m"),
-            quadrant=quadrant,
-            total_quantity=item_quantity,
-            avg_price=item_price,
-            total_revenue=item.get("total_gross_revenue", 0),
-        ))
+    movements = [
+        QuadrantMovement(
+            item_name=row.get("item_name", "Unknown"),
+            month=row.get("month", ""),
+            quadrant=row.get("quadrant", "Dog"),
+            total_quantity=int(row.get("total_quantity", 0) or 0),
+            avg_price=int(row.get("avg_price", 0) or 0),
+            total_revenue=int(row.get("total_revenue", 0) or 0),
+        )
+        for row in latest_rows
+    ]
 
-    # Calculate summary of movements
     summary = {
         "star_count": sum(1 for m in movements if m.quadrant == "Star"),
         "plowhorse_count": sum(1 for m in movements if m.quadrant == "Plowhorse"),
@@ -1812,9 +1766,47 @@ async def get_quadrant_timeline(
         "total_items": len(movements),
     }
 
+    changes: list[QuadrantChange] = []
+    change_counts: dict[str, int] = {}
+    if prior_month:
+        for row in latest_rows:
+            item_name_value = row.get("item_name")
+            if not item_name_value:
+                continue
+            previous = prior_map.get(item_name_value)
+            if not previous:
+                continue
+            prev_quadrant = previous.get("quadrant")
+            next_quadrant = row.get("quadrant")
+            if prev_quadrant and next_quadrant and prev_quadrant != next_quadrant:
+                change_label = f"{prev_quadrant} -> {next_quadrant}"
+                change_counts[change_label] = change_counts.get(change_label, 0) + 1
+                changes.append(QuadrantChange(
+                    item_name=item_name_value,
+                    from_quadrant=prev_quadrant,
+                    to_quadrant=next_quadrant,
+                    change=change_label,
+                    total_quantity=int(row.get("total_quantity", 0) or 0),
+                    total_revenue=int(row.get("total_revenue", 0) or 0),
+                ))
+
+    changes.sort(key=lambda c: c.total_revenue, reverse=True)
+
+    summary.update({
+        "total_changes": len(changes),
+        "change_breakdown": change_counts,
+        "dog_to_star": change_counts.get("Dog -> Star", 0),
+        "star_to_dog": change_counts.get("Star -> Dog", 0),
+        "puzzle_to_star": change_counts.get("Puzzle -> Star", 0),
+        "plowhorse_to_star": change_counts.get("Plowhorse -> Star", 0),
+    })
+
     return QuadrantTimelineResponse(
         movements=movements,
         summary=summary,
+        changes=changes[:20],
+        latest_month=latest_month,
+        prior_month=prior_month,
         filters_applied=filters.model_dump(exclude_none=True),
         generated_at=datetime.utcnow().isoformat(),
     )
@@ -2043,58 +2035,46 @@ async def get_item_history(
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(None, None, branches, None)
 
-    # Get the item's current data from menu_items
-    item_result = supabase.table("menu_items").select("*") \
-        .eq("tenant_id", effective_tenant_id) \
-        .eq("item_name", item_name) \
-        .single() \
-        .execute()
+    result = supabase.rpc("get_item_monthly_quadrants_v1", {
+        "p_tenant_id": effective_tenant_id,
+        "p_start_date": None,
+        "p_end_date": None,
+        "p_branches": filters.branches,
+        "p_categories": None,
+        "p_item_name": item_name,
+    }).execute()
 
-    item_data = item_result.data
-    if not item_data:
+    rows = result.data or []
+    if not rows:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_name}' not found"
         )
 
-    # Get all menu items for median calculation
-    all_items_result = supabase.table("menu_items") \
-        .select("total_quantity, avg_price") \
-        .eq("tenant_id", effective_tenant_id) \
-        .eq("is_excluded", False) \
-        .execute()
-    all_items = all_items_result.data or []
+    rows.sort(key=lambda r: r.get("month", ""))
 
-    # Calculate medians
-    quantities = sorted([row.get("total_quantity", 0) for row in all_items])
-    prices = sorted([row.get("avg_price", 0) for row in all_items])
-
-    mid = len(quantities) // 2
-    median_quantity = quantities[mid] if len(quantities) % 2 else (quantities[mid-1] + quantities[mid]) / 2 if quantities else 0
-    median_price = prices[mid] if len(prices) % 2 else (prices[mid-1] + prices[mid]) / 2 if prices else 0
-
-    # Calculate current quadrant
-    item_quantity = item_data.get("total_quantity", 0)
-    item_price = item_data.get("avg_price", 0)
-    current_quadrant = calculate_quadrant(item_quantity, item_price, median_quantity, median_price)
-
-    # For now, we return the aggregated data as a single history point
-    # A full implementation would query transactions grouped by month
     history = [
         ItemHistoryDataPoint(
-            month=datetime.utcnow().strftime("%Y-%m"),
-            quantity=item_quantity,
-            revenue=item_data.get("total_gross_revenue", 0),
-            avg_price=item_price,
-            quadrant=current_quadrant,
+            month=row.get("month", ""),
+            quantity=int(row.get("total_quantity", 0) or 0),
+            revenue=int(row.get("total_revenue", 0) or 0),
+            avg_price=int(row.get("avg_price", 0) or 0),
+            quadrant=row.get("quadrant", "Dog"),
         )
+        for row in rows
     ]
+
+    current_quadrant = history[-1].quadrant if history else "Dog"
+    quadrant_changes = 0
+    for idx in range(1, len(history)):
+        if history[idx].quadrant != history[idx - 1].quadrant:
+            quadrant_changes += 1
 
     return ItemHistoryResponse(
         item_name=item_name,
         history=history,
         current_quadrant=current_quadrant,
-        quadrant_changes=0,  # Would be calculated from historical data
+        quadrant_changes=quadrant_changes,
         filters_applied=filters.model_dump(exclude_none=True),
         generated_at=datetime.utcnow().isoformat(),
     )

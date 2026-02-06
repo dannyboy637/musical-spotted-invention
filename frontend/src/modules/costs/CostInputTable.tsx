@@ -8,9 +8,10 @@ import { generateMockCosts, calculateMargin, getMarginStatus } from './mockCostD
 interface CostInputTableProps {
   onCostChange: (itemName: string, costCents: number) => void
   costOverrides: Record<string, number>
+  useMockCosts: boolean
 }
 
-export function CostInputTable({ onCostChange, costOverrides }: CostInputTableProps) {
+export function CostInputTable({ onCostChange, costOverrides, useMockCosts }: CostInputTableProps) {
   const { data, isLoading, error, refetch } = useMenuEngineering()
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'margin'>('name')
@@ -19,7 +20,7 @@ export function CostInputTable({ onCostChange, costOverrides }: CostInputTablePr
   const itemsWithCosts = useMemo(() => {
     if (!data?.items) return []
 
-    const withMockCosts = generateMockCosts(data.items)
+    const withMockCosts = useMockCosts ? generateMockCosts(data.items) : data.items
     return withMockCosts.map((item) => ({
       ...item,
       cost_cents: costOverrides[item.item_name] ?? item.cost_cents,

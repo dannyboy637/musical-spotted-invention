@@ -6,7 +6,7 @@ Protected by a secret token to prevent unauthorized access.
 import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Header
 from pydantic import BaseModel
 
 from services.import_service import ImportService
@@ -146,7 +146,9 @@ def run_fetch(tenant_subdomain: str, username: str, password: str, tenant_id: st
 @router.post("/trigger", response_model=FetchResult)
 async def trigger_fetch(
     background_tasks: BackgroundTasks,
-    token: str = Query(..., description="Secret token for authentication"),
+    authorization: str | None = Header(None, description="Bearer token for authentication"),
+    x_auto_fetch_token: str | None = Header(None, description="Alternate token header"),
+    token: str | None = Query(None, description="Deprecated: use Authorization header instead"),
     date: str | None = Query(None, description="Optional date to fetch (MM/DD/YYYY). Defaults to yesterday."),
     sync: bool = Query(False, description="Run synchronously (wait for result). Default: run in background."),
 ):
@@ -156,8 +158,18 @@ async def trigger_fetch(
     Protected by AUTO_FETCH_SECRET token.
     By default runs in background and returns immediately.
     """
+    # Extract token from headers (query token is deprecated)
+    if token:
+        raise HTTPException(status_code=400, detail="Token must be provided via Authorization header")
+
+    header_token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        header_token = authorization[7:]
+    elif x_auto_fetch_token:
+        header_token = x_auto_fetch_token
+
     # Verify token
-    if not verify_token(token):
+    if not header_token or not verify_token(header_token):
         raise HTTPException(status_code=401, detail="Invalid token")
 
     # Get config from environment

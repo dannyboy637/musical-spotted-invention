@@ -129,6 +129,35 @@ export function CostManagementPage() {
     )
   }
 
+  const isProd = import.meta.env.PROD
+  const hasRealCosts = menuData.items.some((item) => item.cost_cents != null)
+  const useMockCosts = !hasRealCosts && !isProd
+
+  if (isProd && !hasRealCosts) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-navy-900">Cost Management</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Track costs and margins for {currentTenant.name}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg border border-amber-200 p-8">
+          <div className="flex flex-col items-center text-center">
+            <AlertTriangle size={48} strokeWidth={1.5} className="text-amber-400 mb-3" />
+            <h3 className="text-lg font-medium text-slate-800 mb-2">
+              Cost management is coming soon
+            </h3>
+            <p className="text-sm text-slate-600 mb-4 max-w-md">
+              This tenant does not have cost data configured yet. Add item costs in the backend
+              to enable margin analysis.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -139,24 +168,30 @@ export function CostManagementPage() {
       </div>
 
       {/* Demo Mode Banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
-        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div>
-          <h3 className="font-medium text-amber-800">Demo Mode</h3>
-          <p className="text-sm text-amber-700 mt-1">
-            Showing estimated costs (30-45% of price). Enter your actual costs below to see real
-            margins. Changes are saved locally and will persist until you clear your browser data.
-          </p>
+      {useMockCosts && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-medium text-amber-800">Demo Mode</h3>
+            <p className="text-sm text-amber-700 mt-1">
+              Showing estimated costs (30-45% of price). Enter your actual costs below to see real
+              margins. Changes are saved locally and will persist until you clear your browser data.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Cost Input Table */}
-      <CostInputTable onCostChange={handleCostChange} costOverrides={costOverrides} />
+      <CostInputTable
+        onCostChange={handleCostChange}
+        costOverrides={costOverrides}
+        useMockCosts={useMockCosts}
+      />
 
       {/* Analysis Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MarginAnalysis costOverrides={costOverrides} />
-        <TopMarginItems costOverrides={costOverrides} />
+        <MarginAnalysis costOverrides={costOverrides} useMockCosts={useMockCosts} />
+        <TopMarginItems costOverrides={costOverrides} useMockCosts={useMockCosts} />
       </div>
     </div>
   )

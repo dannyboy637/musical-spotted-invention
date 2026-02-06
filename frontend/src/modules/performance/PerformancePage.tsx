@@ -1,10 +1,12 @@
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import { PerformanceSummary } from './PerformanceSummary'
 import { TrendCharts } from './TrendCharts'
 import { GrowthMetrics } from './GrowthMetrics'
 import { WeeklyRhythm } from './WeeklyRhythm'
+import { DailyBreakdownTable } from '../../components/analytics/DailyBreakdownTable'
 
 export function PerformancePage() {
   const { profile } = useAuthStore()
@@ -28,10 +30,11 @@ export function PerformancePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="performance-export" className="space-y-6">
       <PageHeader
         title="Performance"
         subtitle={`Track sales trends and growth for ${currentTenant.name}`}
+        actions={<ExportPdfButton title="Performance" targetId="performance-export" />}
       />
 
       {/* Performance Summary */}
@@ -42,6 +45,9 @@ export function PerformancePage() {
 
       {/* Weekly Rhythm */}
       <WeeklyRhythm />
+
+      {/* Daily Breakdown Table */}
+      <DailyBreakdownTable />
 
       {/* Trend Charts */}
       <TrendCharts />

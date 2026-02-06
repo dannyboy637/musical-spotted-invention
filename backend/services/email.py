@@ -10,8 +10,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Set to False and add RESEND_API_KEY to .env for real sending
-MOCK_MODE = True
+# Set EMAIL_MOCK_MODE=false and add RESEND_API_KEY to enable real sending
+MOCK_MODE = os.getenv("EMAIL_MOCK_MODE", "true").lower() == "true"
 
 # Email configuration
 FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "reports@yourdomain.com")

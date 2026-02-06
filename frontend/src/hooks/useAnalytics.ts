@@ -61,6 +61,21 @@ export interface DaypartingData {
   generated_at: string
 }
 
+export interface DailyBreakdownItem {
+  date: string
+  net_sales: number
+  tax: number
+  service_charge: number
+  discounts: number
+  transactions: number
+}
+
+export interface DailyBreakdownData {
+  days: DailyBreakdownItem[]
+  filters_applied: Record<string, unknown>
+  generated_at: string
+}
+
 export interface HeatmapDataPoint {
   day: number // 0-6 (Mon-Sun)
   hour: number // 0-23
@@ -261,8 +276,11 @@ function buildFilterParams(
   }
 
   if (dateRange) {
-    params.start_date = dateRange.start.toISOString().split('T')[0]
-    params.end_date = dateRange.end.toISOString().split('T')[0]
+    // Use local date parts to avoid timezone shift (toISOString converts to UTC first)
+    const formatLocal = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    params.start_date = formatLocal(dateRange.start)
+    params.end_date = formatLocal(dateRange.end)
   }
 
   if (branches.length > 0) {
@@ -346,6 +364,10 @@ export function useDayparting() {
 
 export function useHourlyHeatmap() {
   return useAnalyticsQuery<HourlyHeatmapData>('hourly-heatmap', 'analytics-hourly-heatmap')
+}
+
+export function useDailyBreakdown() {
+  return useAnalyticsQuery<DailyBreakdownData>('daily-breakdown', 'analytics-daily-breakdown')
 }
 
 export function useCategories(options?: { includeExcluded?: boolean }) {
@@ -536,6 +558,15 @@ export interface QuadrantMovement {
   total_revenue: number
 }
 
+export interface QuadrantChange {
+  item_name: string
+  from_quadrant: QuadrantMovement['quadrant']
+  to_quadrant: QuadrantMovement['quadrant']
+  change: string
+  total_quantity: number
+  total_revenue: number
+}
+
 export interface QuadrantTimelineData {
   movements: QuadrantMovement[]
   summary: {
@@ -544,7 +575,16 @@ export interface QuadrantTimelineData {
     puzzle_count: number
     dog_count: number
     total_items: number
+    total_changes?: number
+    change_breakdown?: Record<string, number>
+    dog_to_star?: number
+    star_to_dog?: number
+    puzzle_to_star?: number
+    plowhorse_to_star?: number
   }
+  changes?: QuadrantChange[]
+  latest_month?: string | null
+  prior_month?: string | null
   filters_applied: Record<string, unknown>
   generated_at: string
 }
