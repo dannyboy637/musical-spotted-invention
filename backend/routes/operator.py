@@ -708,24 +708,23 @@ async def natural_language_query(
 
     # Mock responses based on query patterns
     if "top" in query and ("item" in query or "product" in query or "seller" in query):
-        # Get actual top items
-        result = supabase.table("transactions").select(
-            "item_name, gross_revenue"
-        ).eq(
-            "tenant_id", tenant_id
-        ).execute()
+        # Get top items via RPC (SQL-side aggregation)
+        result = supabase.rpc("get_item_totals_v2", {
+            "p_tenant_id": tenant_id,
+            "p_exclude_excluded": True,
+        }).execute()
 
-        items = {}
-        for t in (result.data or []):
-            name = t.get("item_name", "Unknown")
-            items[name] = items.get(name, 0) + t.get("gross_revenue", 0)
+        items_data = sorted(
+            (result.data or []),
+            key=lambda x: x.get("total_revenue", 0) or 0,
+            reverse=True,
+        )[:5]
 
-        sorted_items = sorted(items.items(), key=lambda x: x[1], reverse=True)[:5]
-
-        if sorted_items:
+        if items_data:
             response = f"Top 5 items for {tenant_name}:\n\n"
-            for i, (name, revenue) in enumerate(sorted_items, 1):
-                response += f"{i}. {name}: P{revenue/100:,.0f}\n"
+            for i, item in enumerate(items_data, 1):
+                revenue = item.get("total_revenue", 0) or 0
+                response += f"{i}. {item.get('item_name', 'Unknown')}: P{revenue/100:,.0f}\n"
         else:
             response = f"No transaction data available for {tenant_name} yet."
 
@@ -733,32 +732,36 @@ async def natural_language_query(
             "answer": response,
             "query": query_request.query,
             "tenant_name": tenant_name,
-            "data_used": "transactions table",
+            "data_used": "get_item_totals_v2 RPC",
             "mock_mode": True,
         }
 
     elif "revenue" in query or "sales" in query:
-        # Get revenue summary
-        result = supabase.table("transactions").select(
-            "gross_revenue, receipt_timestamp"
-        ).eq(
-            "tenant_id", tenant_id
-        ).execute()
+        # Get revenue summary via RPC (SQL-side aggregation)
+        result = supabase.rpc("get_analytics_overview", {
+            "p_tenant_id": tenant_id,
+            "p_start_date": None,
+            "p_end_date": None,
+            "p_branches": None,
+            "p_categories": None,
+        }).execute()
 
-        total_revenue = sum(t.get("gross_revenue", 0) for t in (result.data or []))
-        txn_count = len(result.data or [])
+        data = result.data or {}
+        total_revenue = data.get("total_revenue", 0)
+        txn_count = data.get("total_transactions", 0)
+        avg_ticket = data.get("avg_ticket", 0)
 
         response = f"Revenue summary for {tenant_name}:\n\n"
         response += f"- Total Revenue: P{total_revenue/100:,.0f}\n"
         response += f"- Total Transactions: {txn_count:,}\n"
-        if txn_count > 0:
-            response += f"- Average Check: P{(total_revenue/txn_count)/100:,.0f}\n"
+        if avg_ticket > 0:
+            response += f"- Average Check: P{avg_ticket/100:,.0f}\n"
 
         return {
             "answer": response,
             "query": query_request.query,
             "tenant_name": tenant_name,
-            "data_used": "transactions table",
+            "data_used": "get_analytics_overview RPC",
             "mock_mode": True,
         }
 
