@@ -18,6 +18,28 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 SUPABASE_PAGE_SIZE = 1000
 
 
+def get_excluded_item_names(tenant_id: str) -> set:
+    """Get set of excluded item names for a tenant, with caching."""
+    def fetch():
+        result = supabase.table("excluded_items") \
+            .select("menu_items(item_name)") \
+            .eq("tenant_id", tenant_id) \
+            .execute()
+        names = set()
+        for row in (result.data or []):
+            mi = row.get("menu_items") or {}
+            if isinstance(mi, dict) and mi.get("item_name"):
+                names.add(mi["item_name"])
+        return names
+
+    return data_cache.get_or_fetch(
+        prefix="excluded_item_names",
+        fetch_fn=fetch,
+        ttl="short",
+        tenant_id=tenant_id,
+    )
+
+
 def fetch_all_transactions(
     tenant_id: str,
     filters: "AnalyticsFilters",
@@ -942,6 +964,9 @@ async def get_category_items(
             max_rows=100000
         )
 
+        # Filter out excluded items
+        excluded_names = get_excluded_item_names(effective_tenant_id)
+
         # Aggregate by item
         item_totals = {}
         total_revenue = 0
@@ -949,6 +974,8 @@ async def get_category_items(
 
         for row in data:
             item_name = row.get("item_name", "Unknown")
+            if item_name in excluded_names:
+                continue
             revenue = row.get("gross_revenue", 0) or 0
             qty = row.get("quantity", 0) or 0
 

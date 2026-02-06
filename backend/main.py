@@ -23,6 +23,7 @@ from routes.alerts import router as alerts_router
 from routes.reports import router as reports_router
 from routes.operator import router as operator_router
 from routes.auto_fetch import router as auto_fetch_router
+from routes.exclusions import router as exclusions_router
 from middleware.metrics import MetricsMiddleware
 from middleware.rate_limit import limiter
 from db.supabase import supabase
@@ -148,3 +149,4 @@ app.include_router(alerts_router)
 app.include_router(reports_router)
 app.include_router(operator_router)
 app.include_router(auto_fetch_router)
+app.include_router(exclusions_router)
