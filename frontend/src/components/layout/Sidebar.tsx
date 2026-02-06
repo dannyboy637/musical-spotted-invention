@@ -34,7 +34,7 @@ const navItems = [
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/costs', icon: DollarSign, label: 'Costs', ownerOnly: true },
   { to: '/data-management', icon: Database, label: 'Data', ownerOnly: true },
-  { to: '/reports', icon: FileText, label: 'Reports', operatorOnly: true },
+  { to: '/reports', icon: FileText, label: 'Reports', ownerOnly: true },
 ]
 
 interface SidebarProps {

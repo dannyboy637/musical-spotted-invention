@@ -182,7 +182,7 @@
   - `POST /api/reports/{id}/approve` - Mark as approved
   - `POST /api/reports/{id}/send` - Send email (subject reflects period type)
   - `DELETE /api/reports/{id}` - Delete pending/approved reports
-- Frontend: Report Center (`/reports`) - Operator only
+- Frontend: Report Center (`/reports`) - Operator and owner
   - Reports list with status and period type badges
   - Generate single report with period dropdown (Week/Month/Quarter/Year)
   - Generate all (weekly only)
@@ -391,7 +391,7 @@ frontend/src/
 │   ├── costs/                   # Cost input, margin calculations
 │   ├── data-management/         # Import, transactions view
 │   ├── alerts/                  # Alerts list page
-│   └── reports/                 # Report Center, Report Preview (operator only)
+│   └── reports/                 # Report Center, Report Preview (operator + owner)
 ├── components/
 │   ├── layout/                  # AppShell, Sidebar, Header, GlobalFilters
 │   ├── ui/                      # Spinner, DateRangePicker, MultiSelect, etc.
