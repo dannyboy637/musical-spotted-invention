@@ -37,7 +37,7 @@ export function CategoryDetailSection({ selectedCategory }: CategoryDetailSectio
       topQuantityItems: new Set(sortedByQuantity.slice(0, 3).map((i) => i.item_name)),
       bottomQuantityItems: new Set(sortedByQuantity.slice(-3).map((i) => i.item_name)),
     }
-  }, [data?.items])
+  }, [data])
 
   // Transform data for pie chart
   const chartData = useMemo(() => {
@@ -47,7 +47,7 @@ export function CategoryDetailSection({ selectedCategory }: CategoryDetailSectio
       value: item.revenue,
       color: getChartColor(i),
     }))
-  }, [data?.items])
+  }, [data])
 
   // Render performance badges
   const renderPerformanceBadges = (itemName: string) => {

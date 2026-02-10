@@ -59,8 +59,8 @@ describe('authStore', () => {
     it('clears all auth state', async () => {
       // Set some state first
       useAuthStore.setState({
-        user: { id: 'user-1' } as any,
-        session: { access_token: 'token-1' } as any,
+        user: { id: 'user-1' } as ReturnType<typeof useAuthStore.getState>['user'],
+        session: { access_token: 'token-1' } as ReturnType<typeof useAuthStore.getState>['session'],
         profile: { id: 'user-1', email: 'test@test.com', role: 'owner' as const },
       })
 
@@ -114,13 +114,14 @@ describe('authStore', () => {
   describe('login state transition', () => {
     it('sets isLoading during login attempt', async () => {
       const { supabase } = await import('../../lib/supabase')
-      ;(supabase.auth.signInWithPassword as any).mockResolvedValue({
+      vi.mocked(supabase.auth.signInWithPassword).mockResolvedValue({
         data: {
           user: { id: 'user-1', email: 'test@test.com' },
           session: { access_token: 'token-1' },
         },
         error: null,
-      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
 
       // Start login (don't await)
       const loginPromise = useAuthStore.getState().login('test@test.com', 'password')
@@ -132,10 +133,11 @@ describe('authStore', () => {
 
     it('returns error message on failed login', async () => {
       const { supabase } = await import('../../lib/supabase')
-      ;(supabase.auth.signInWithPassword as any).mockResolvedValue({
+      vi.mocked(supabase.auth.signInWithPassword).mockResolvedValue({
         data: { user: null, session: null },
         error: { message: 'Invalid credentials' },
-      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
 
       const result = await useAuthStore.getState().login('test@test.com', 'wrong')
       expect(result.error).toBe('Invalid credentials')

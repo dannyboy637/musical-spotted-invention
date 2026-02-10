@@ -112,7 +112,7 @@ function CategoryItemsChart({ category, colorIndex }: { category: string; colorI
       value: item.revenue,
       color: getChartColor(colorIndex), // Use category color for all items
     }))
-  }, [data?.items, colorIndex])
+  }, [data, colorIndex])
 
   return (
     <ChartContainer

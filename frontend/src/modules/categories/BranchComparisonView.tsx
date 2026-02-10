@@ -24,7 +24,7 @@ export function BranchComparisonView({ selectedCategory }: BranchComparisonViewP
       quantity: b.quantity,
       color: getChartColor(i),
     }))
-  }, [data?.branches])
+  }, [data])
 
   const columns: Column<BranchCategoryData>[] = [
     {

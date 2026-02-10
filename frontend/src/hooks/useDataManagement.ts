@@ -55,7 +55,7 @@ export interface DataHealthResponse {
 }
 
 // Hook to list import jobs
-export function useImportJobs(limit = 20, offset = 0) {
+export function useImportJobs(limit = 20, offset = 0, options?: { pollingWhileProcessing?: boolean }) {
   const { session } = useAuthStore()
   const { activeTenant } = useTenantStore()
 
@@ -73,6 +73,14 @@ export function useImportJobs(limit = 20, offset = 0) {
       return response.data
     },
     enabled: !!session?.access_token,
+    // Poll every 3s when any job is pending/processing
+    refetchInterval: options?.pollingWhileProcessing
+      ? (query) => {
+          const jobs = query.state.data
+          const hasActive = jobs?.some(j => j.status === 'pending' || j.status === 'processing')
+          return hasActive ? 3000 : false
+        }
+      : undefined,
   })
 }
 
@@ -147,11 +155,11 @@ export function useUploadCSV(onProgress?: (progress: number) => void) {
 
 // Hook for data health check
 export function useDataHealth() {
-  const { session } = useAuthStore()
+  const { session, profile } = useAuthStore()
   const { activeTenant } = useTenantStore()
 
   return useQuery<DataHealthResponse>({
-    queryKey: ['data-health', activeTenant?.id],
+    queryKey: ['data-health', activeTenant?.id ?? profile?.tenant_id],
     queryFn: async () => {
       if (!session?.access_token) {
         throw new Error('No access token')
@@ -162,7 +170,8 @@ export function useDataHealth() {
       })
       return response.data
     },
-    enabled: !!session?.access_token && !!activeTenant,
+    // Owners have their tenant_id in profile even before activeTenant is set
+    enabled: !!session?.access_token && !!(activeTenant || profile?.tenant_id),
     staleTime: 1000 * 60, // 1 minute
   })
 }

@@ -24,7 +24,7 @@ export function CostInputTable({ onCostChange, costOverrides }: CostInputTablePr
       ...item,
       cost_cents: costOverrides[item.item_name] ?? item.cost_cents,
     }))
-  }, [data?.items, costOverrides])
+  }, [data, costOverrides])
 
   // Filter and sort
   const filteredItems = useMemo(() => {

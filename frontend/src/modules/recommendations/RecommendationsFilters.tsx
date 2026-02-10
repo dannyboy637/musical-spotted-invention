@@ -1,6 +1,5 @@
 import { Calendar } from 'lucide-react'
-
-export type PeriodOption = 'month' | 'quarter' | 'half-year' | 'year'
+import type { PeriodOption } from './recommendationsUtils'
 
 interface RecommendationsFiltersProps {
   selectedPeriod: PeriodOption
@@ -16,31 +15,6 @@ const PERIOD_OPTIONS: { value: PeriodOption; label: string; description: string 
   { value: 'half-year', label: 'Last 6 Mo', description: '180 days' },
   { value: 'year', label: 'Full Year', description: '365 days' },
 ]
-
-export function getDateRangeForPeriod(period: PeriodOption): { startDate: string; endDate: string } {
-  const end = new Date()
-  const start = new Date()
-
-  switch (period) {
-    case 'month':
-      start.setDate(start.getDate() - 30)
-      break
-    case 'quarter':
-      start.setDate(start.getDate() - 90)
-      break
-    case 'half-year':
-      start.setDate(start.getDate() - 180)
-      break
-    case 'year':
-      start.setDate(start.getDate() - 365)
-      break
-  }
-
-  return {
-    startDate: start.toISOString().split('T')[0],
-    endDate: end.toISOString().split('T')[0],
-  }
-}
 
 export function RecommendationsFilters({
   selectedPeriod,
