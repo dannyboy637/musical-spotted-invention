@@ -2,6 +2,7 @@
 Rate limiting middleware for API protection.
 Uses slowapi with user identification from JWT.
 """
+import hashlib
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from fastapi import Request
@@ -19,9 +20,10 @@ def get_user_identifier(request: Request) -> str:
     # Try to get from authorization header
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
-        # Use a hash of the token for identification (not the full token)
+        # Use stable hash for identification (hash() is randomized per process)
         token = auth_header[7:]
-        return f"token:{hash(token) % 10000000}"  # Use truncated hash
+        token_hash = hashlib.sha256(token.encode()).hexdigest()[:12]
+        return f"token:{token_hash}"
 
     # Fall back to IP address
     return f"ip:{get_remote_address(request)}"

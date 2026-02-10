@@ -1,15 +1,17 @@
 """
 Authentication routes.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from middleware.auth import get_current_user, UserPayload
+from middleware.rate_limit import limiter
 from db.supabase import supabase
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.get("/me")
-async def get_current_user_info(user: UserPayload = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def get_current_user_info(request: Request, user: UserPayload = Depends(get_current_user)):
     """
     Get the current authenticated user's information.
     Requires a valid JWT token.

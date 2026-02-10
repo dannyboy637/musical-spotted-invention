@@ -29,6 +29,7 @@ class TestUploadValidation:
     async def test_viewer_cannot_upload(self):
         """Viewers should be rejected with 403."""
         from routes.data import upload_csv
+        from middleware.rate_limit import limiter
 
         mock_user = UserPayload(
             sub="viewer-1", role="viewer", tenant_id="t-1"
@@ -36,19 +37,25 @@ class TestUploadValidation:
         mock_file = MagicMock()
         mock_file.filename = "data.csv"
 
-        with pytest.raises(HTTPException) as exc_info:
-            await upload_csv(
-                background_tasks=MagicMock(),
-                file=mock_file,
-                tenant_id=None,
-                user=mock_user,
-            )
-        assert exc_info.value.status_code == 403
+        limiter.enabled = False
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                await upload_csv(
+                    request=MagicMock(),
+                    background_tasks=MagicMock(),
+                    file=mock_file,
+                    tenant_id=None,
+                    user=mock_user,
+                )
+            assert exc_info.value.status_code == 403
+        finally:
+            limiter.enabled = True
 
     @pytest.mark.asyncio
     async def test_non_csv_rejected(self):
         """Non-CSV files should be rejected with 400."""
         from routes.data import upload_csv
+        from middleware.rate_limit import limiter
 
         mock_user = UserPayload(
             sub="owner-1", role="owner", tenant_id="t-1"
@@ -56,20 +63,26 @@ class TestUploadValidation:
         mock_file = MagicMock()
         mock_file.filename = "data.xlsx"
 
-        with pytest.raises(HTTPException) as exc_info:
-            await upload_csv(
-                background_tasks=MagicMock(),
-                file=mock_file,
-                tenant_id=None,
-                user=mock_user,
-            )
-        assert exc_info.value.status_code == 400
-        assert "csv" in exc_info.value.detail.lower()
+        limiter.enabled = False
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                await upload_csv(
+                    request=MagicMock(),
+                    background_tasks=MagicMock(),
+                    file=mock_file,
+                    tenant_id=None,
+                    user=mock_user,
+                )
+            assert exc_info.value.status_code == 400
+            assert "csv" in exc_info.value.detail.lower()
+        finally:
+            limiter.enabled = True
 
     @pytest.mark.asyncio
     async def test_owner_cannot_upload_to_different_tenant(self):
         """Owners should not be able to upload to a tenant they don't belong to."""
         from routes.data import upload_csv
+        from middleware.rate_limit import limiter
 
         mock_user = UserPayload(
             sub="owner-1", role="owner", tenant_id="t-1"
@@ -77,19 +90,25 @@ class TestUploadValidation:
         mock_file = MagicMock()
         mock_file.filename = "data.csv"
 
-        with pytest.raises(HTTPException) as exc_info:
-            await upload_csv(
-                background_tasks=MagicMock(),
-                file=mock_file,
-                tenant_id="t-different",
-                user=mock_user,
-            )
-        assert exc_info.value.status_code == 403
+        limiter.enabled = False
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                await upload_csv(
+                    request=MagicMock(),
+                    background_tasks=MagicMock(),
+                    file=mock_file,
+                    tenant_id="t-different",
+                    user=mock_user,
+                )
+            assert exc_info.value.status_code == 403
+        finally:
+            limiter.enabled = True
 
     @pytest.mark.asyncio
     async def test_operator_without_tenant_must_specify(self):
         """Operator with no tenant_id and no override should get 400."""
         from routes.data import upload_csv
+        from middleware.rate_limit import limiter
 
         mock_user = UserPayload(
             sub="op-1", role="operator", tenant_id=None
@@ -97,14 +116,19 @@ class TestUploadValidation:
         mock_file = MagicMock()
         mock_file.filename = "data.csv"
 
-        with pytest.raises(HTTPException) as exc_info:
-            await upload_csv(
-                background_tasks=MagicMock(),
-                file=mock_file,
-                tenant_id=None,
-                user=mock_user,
-            )
-        assert exc_info.value.status_code == 400
+        limiter.enabled = False
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                await upload_csv(
+                    request=MagicMock(),
+                    background_tasks=MagicMock(),
+                    file=mock_file,
+                    tenant_id=None,
+                    user=mock_user,
+                )
+            assert exc_info.value.status_code == 400
+        finally:
+            limiter.enabled = True
 
 
 # =============================================

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 
 from middleware.auth import get_user_with_tenant, UserPayload
+from middleware.auth_helpers import get_effective_tenant_id, require_owner_or_operator
 from db.supabase import supabase
 from utils.cache import data_cache
 
@@ -62,36 +63,6 @@ class ScanResponse(BaseModel):
     alerts_created: int
     scan_duration_ms: int
     message: str
-
-
-# ============================================
-# HELPER FUNCTIONS
-# ============================================
-
-def get_effective_tenant_id(user: UserPayload, tenant_id_override: str = None) -> str:
-    """Get tenant ID for queries."""
-    if user.role == "operator" and tenant_id_override:
-        return tenant_id_override
-    if user.tenant_id:
-        return user.tenant_id
-    if tenant_id_override:
-        return tenant_id_override
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="No tenant selected"
-    )
-
-
-def require_owner_or_operator(user: UserPayload, tenant_id: str):
-    """Check that user is owner of the tenant or an operator."""
-    if user.role == "operator":
-        return  # Operators can do anything
-    if user.role == "owner" and user.tenant_id == tenant_id:
-        return  # Owners can manage their own tenant
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Only tenant owner can perform this action"
-    )
 
 
 # ============================================

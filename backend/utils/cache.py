@@ -152,8 +152,12 @@ class DataCache:
             tenant_id: Tenant ID to invalidate
         """
         # Since tenant_id is hashed into the key, we need to clear broadly
-        # Clear all analytics-related caches for safety
-        for prefix in ["branches", "categories", "analytics", "overview", "menu"]:
+        # Clear all tenant-scoped caches for safety
+        for prefix in [
+            "branches", "categories", "analytics",
+            "exclusions_list", "excluded_item_names", "exclusion_suggestions",
+            "alerts_list", "alert_settings",
+        ]:
             self.invalidate_prefix(prefix)
 
     def invalidate_all(self) -> None:
