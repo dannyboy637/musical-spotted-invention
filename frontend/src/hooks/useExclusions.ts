@@ -4,6 +4,33 @@ import { useAuthStore } from '../stores/authStore'
 import { useTenantStore } from '../stores/tenantStore'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const ANALYTICS_QUERY_PREFIXES = [
+  'analytics-overview',
+  'analytics-menu-engineering',
+  'analytics-dayparting',
+  'analytics-hourly-heatmap',
+  'analytics-daily-breakdown',
+  'analytics-categories',
+  'analytics-category-items',
+  'analytics-category-by-branch',
+  'analytics-bundles',
+  'analytics-performance',
+  'analytics-performance-trends',
+  'analytics-performance-branches',
+  'analytics-day-of-week',
+  'analytics-year-over-year',
+  'day-breakdown',
+  'movements-quadrant-timeline',
+  'movements-yoy-summary',
+  'movements-seasonal',
+  'movements-item-history',
+]
+
+function invalidateAnalyticsQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  ANALYTICS_QUERY_PREFIXES.forEach((key) => {
+    queryClient.invalidateQueries({ queryKey: [key] })
+  })
+}
 
 // Types
 export interface ExcludedItem {
@@ -125,8 +152,7 @@ export function useAddExclusion() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exclusions'] })
       queryClient.invalidateQueries({ queryKey: ['exclusion-suggestions'] })
-      // Invalidate analytics queries that may be affected
-      queryClient.invalidateQueries({ queryKey: ['analytics'] })
+      invalidateAnalyticsQueries(queryClient)
     },
   })
 }
@@ -151,7 +177,7 @@ export function useRemoveExclusion() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exclusions'] })
       queryClient.invalidateQueries({ queryKey: ['exclusion-suggestions'] })
-      queryClient.invalidateQueries({ queryKey: ['analytics'] })
+      invalidateAnalyticsQueries(queryClient)
     },
   })
 }

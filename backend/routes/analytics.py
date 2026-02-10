@@ -2131,31 +2131,50 @@ async def get_day_breakdown(
     total_quantity = sum(h.quantity for h in hourly)
     peak_hour = max(hourly, key=lambda h: h.revenue).hour if hourly else 12
 
-    # Get top items from branch_summaries (daily period)
+    # Get top items for the day.
+    # Use item_totals RPC when category filters are present so top/bottom items
+    # stay consistent with the filtered totals shown above.
     top_items: List[TopItemData] = []
     bottom_items: List[TopItemData] = []
 
-    branch_query = supabase.table("branch_summaries").select(
-        "top_items"
-    ).eq("tenant_id", effective_tenant_id).eq(
-        "period_type", "daily"
-    ).eq("period_start", date)
-
-    if filters.branches:
-        branch_query = branch_query.in_("store_name", filters.branches)
-
-    branch_result = branch_query.execute()
-
-    # Aggregate top_items across branches
     item_totals = {}
-    for row in branch_result.data or []:
-        items = row.get("top_items") or []
-        for item in items:
-            name = item.get("item_name", "Unknown")
-            if name not in item_totals:
-                item_totals[name] = {"quantity": 0, "revenue": 0}
-            item_totals[name]["quantity"] += item.get("quantity", 0) or 0
-            item_totals[name]["revenue"] += item.get("revenue", 0) or 0
+    if filters.categories:
+        item_result = supabase.rpc("get_item_totals_v2", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": date,
+            "p_end_date": date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+            "p_exclude_excluded": True,
+        }).execute()
+
+        for row in item_result.data or []:
+            name = row.get("item_name", "Unknown")
+            item_totals[name] = {
+                "quantity": int(row.get("total_quantity", 0) or 0),
+                "revenue": int(row.get("total_revenue", 0) or 0),
+            }
+    else:
+        branch_query = supabase.table("branch_summaries").select(
+            "top_items"
+        ).eq("tenant_id", effective_tenant_id).eq(
+            "period_type", "daily"
+        ).eq("period_start", date)
+
+        if filters.branches:
+            branch_query = branch_query.in_("store_name", filters.branches)
+
+        branch_result = branch_query.execute()
+
+        # Aggregate top_items across branches
+        for row in branch_result.data or []:
+            items = row.get("top_items") or []
+            for item in items:
+                name = item.get("item_name", "Unknown")
+                if name not in item_totals:
+                    item_totals[name] = {"quantity": 0, "revenue": 0}
+                item_totals[name]["quantity"] += item.get("quantity", 0) or 0
+                item_totals[name]["revenue"] += item.get("revenue", 0) or 0
 
     # Sort and get top/bottom 10
     sorted_items = sorted(

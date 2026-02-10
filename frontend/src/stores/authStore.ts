@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware'
 import { supabase } from '../lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 // Only log in development mode
 const isDev = import.meta.env.DEV
 const log = (...args: unknown[]) => isDev && console.log(...args)
@@ -166,11 +168,10 @@ export const useAuthStore = create<AuthState>()(
         }, 10000) // 10 second timeout
 
         try {
-          const apiUrl = import.meta.env.VITE_API_URL
-          log('[AuthStore] Fetching profile from:', `${apiUrl}/auth/me`)
+          log('[AuthStore] Fetching profile from:', `${API_URL}/auth/me`)
 
           const response = await fetch(
-            `${apiUrl}/auth/me`,
+            `${API_URL}/auth/me`,
             {
               headers: {
                 Authorization: `Bearer ${session.access_token}`,

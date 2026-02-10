@@ -170,6 +170,7 @@ export function ReportPreviewPage() {
     setShowSendModal(false)
   }
 
+  const isOperator = profile?.role === 'operator'
   const isSent = report.status === 'sent'
   const isApproved = report.status === 'approved'
   const isPending = report.status === 'pending'
@@ -201,7 +202,7 @@ export function ReportPreviewPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3">
-          {!isSent && (
+          {isOperator && !isSent && (
             <>
               {isPending && (
                 <button
@@ -262,14 +263,14 @@ export function ReportPreviewPage() {
             <select
               value={narrativeStyle}
               onChange={(e) => setNarrativeStyle(e.target.value as NarrativeStyle)}
-              disabled={isSent}
+              disabled={!isOperator || isSent}
               className="text-xs border border-slate-200 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200"
             >
               <option value="full">Full Summary</option>
               <option value="bullets">Bullet Points</option>
             </select>
           </div>
-          {!isSent && (
+          {isOperator && !isSent && (
             <div className="flex items-center gap-2">
               <button
                 onClick={handleRegenerate}
@@ -313,7 +314,7 @@ export function ReportPreviewPage() {
           )}
         </div>
         <div className="p-4">
-          {isEditing ? (
+          {isOperator && isEditing ? (
             <textarea
               value={editedNarrative}
               onChange={(e) => setEditedNarrative(e.target.value)}
@@ -416,7 +417,7 @@ export function ReportPreviewPage() {
       )}
 
       {/* Send Modal */}
-      {showSendModal && (
+      {isOperator && showSendModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="fixed inset-0 bg-black/50" onClick={() => setShowSendModal(false)} />
           <div className="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">

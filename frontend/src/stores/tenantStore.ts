@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Tenant } from './authStore'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 interface TenantState {
   // List of all tenants (operators only)
   tenants: Tenant[]
@@ -29,7 +31,7 @@ export const useTenantStore = create<TenantState>()(
 
         try {
           const response = await fetch(
-            `${import.meta.env.VITE_API_URL}/tenants`,
+            `${API_URL}/tenants`,
             {
               headers: {
                 Authorization: `Bearer ${accessToken}`,

@@ -81,7 +81,7 @@ export interface ItemExclusionSuggestionsResponse {
 
 // Hook to list import jobs
 export function useImportJobs(limit = 20, offset = 0, options?: { pollingWhileProcessing?: boolean }) {
-  const { session } = useAuthStore()
+  const { session, profile } = useAuthStore()
   const { activeTenant } = useTenantStore()
 
   return useQuery<ImportJob[]>({
@@ -91,9 +91,14 @@ export function useImportJobs(limit = 20, offset = 0, options?: { pollingWhilePr
         throw new Error('No access token')
       }
 
+      const params: Record<string, string | number> = { limit, offset }
+      if (profile?.role === 'operator' && activeTenant?.id) {
+        params.tenant_id = activeTenant.id
+      }
+
       const response = await axios.get(`${API_URL}/data/imports`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
-        params: { limit, offset },
+        params,
       })
       return response.data
     },
@@ -190,8 +195,14 @@ export function useDataHealth() {
         throw new Error('No access token')
       }
 
+      const params: Record<string, string> = {}
+      if (profile?.role === 'operator' && activeTenant?.id) {
+        params.tenant_id = activeTenant.id
+      }
+
       const response = await axios.get(`${API_URL}/data/health`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
+        params,
       })
       return response.data
     },

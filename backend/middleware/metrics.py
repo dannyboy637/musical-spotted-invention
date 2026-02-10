@@ -5,8 +5,8 @@ Logs response times and status codes for all API requests.
 import time
 import asyncio
 import logging
-import traceback
 import os
+import threading
 from typing import Optional, Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -25,7 +25,12 @@ EXCLUDED_ENDPOINTS = {
 # Threshold for "slow" endpoints (ms)
 SLOW_THRESHOLD_MS = 300
 METRIC_LOG_MAX_CONCURRENCY = int(os.getenv("METRIC_LOG_MAX_CONCURRENCY", "20"))
-_metric_semaphore = asyncio.Semaphore(METRIC_LOG_MAX_CONCURRENCY)
+METRIC_LOG_MAX_PENDING = max(
+    1,
+    int(os.getenv("METRIC_LOG_MAX_PENDING", str(METRIC_LOG_MAX_CONCURRENCY))),
+)
+METRIC_DROP_LOG_EVERY = max(1, int(os.getenv("METRIC_DROP_LOG_EVERY", "100")))
+_metric_slots = threading.BoundedSemaphore(METRIC_LOG_MAX_PENDING)
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -33,6 +38,10 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     Middleware that collects API performance metrics.
     Logs to database asynchronously to avoid adding latency.
     """
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._dropped_metric_count = 0
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip excluded endpoints and OPTIONS requests (CORS preflights)
@@ -46,7 +55,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             return response
-        except Exception as e:
+        except Exception:
             error_occurred = True
             raise
         finally:
@@ -66,16 +75,27 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                     f"took {response_time_ms}ms (threshold: {SLOW_THRESHOLD_MS}ms)"
                 )
 
-            # Log metric asynchronously (fire and forget)
-            asyncio.create_task(
-                self._log_metric_async(
-                    tenant_id=tenant_id,
-                    endpoint=request.url.path,
-                    method=request.method,
-                    response_time_ms=response_time_ms,
-                    status_code=status_code,
-                )
-            )
+            # Bound in-flight metric writes to avoid unbounded task growth.
+            if _metric_slots.acquire(blocking=False):
+                try:
+                    asyncio.create_task(
+                        self._log_metric_async(
+                            tenant_id=tenant_id,
+                            endpoint=request.url.path,
+                            method=request.method,
+                            response_time_ms=response_time_ms,
+                            status_code=status_code,
+                        )
+                    )
+                except RuntimeError:
+                    _metric_slots.release()
+            else:
+                self._dropped_metric_count += 1
+                if self._dropped_metric_count % METRIC_DROP_LOG_EVERY == 0:
+                    logger.warning(
+                        "Dropped %s API metrics because logger is saturated",
+                        self._dropped_metric_count,
+                    )
 
     async def _log_metric_async(
         self,
@@ -86,7 +106,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         status_code: int,
     ) -> None:
         """Log metric to database without blocking the event loop."""
-        async with _metric_semaphore:
+        try:
             await asyncio.to_thread(
                 self._log_metric_sync,
                 tenant_id,
@@ -95,6 +115,8 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 response_time_ms,
                 status_code,
             )
+        finally:
+            _metric_slots.release()
 
     def _log_metric_sync(
         self,

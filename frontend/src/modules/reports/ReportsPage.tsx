@@ -63,9 +63,10 @@ interface ReportRowProps {
   report: Report
   onDelete: (id: string) => void
   isDeleting: boolean
+  canDelete: boolean
 }
 
-function ReportRow({ report, onDelete, isDeleting }: ReportRowProps) {
+function ReportRow({ report, onDelete, isDeleting, canDelete }: ReportRowProps) {
   const kpis = report.report_data?.kpis || {}
 
   return (
@@ -116,7 +117,7 @@ function ReportRow({ report, onDelete, isDeleting }: ReportRowProps) {
           >
             <Eye className="h-5 w-5" />
           </Link>
-          {report.status !== 'sent' && (
+          {canDelete && report.status !== 'sent' && (
             <button
               onClick={() => onDelete(report.id)}
               disabled={isDeleting}
@@ -384,16 +385,24 @@ export function ReportsPage() {
             </button>
           )}
 
-          {/* Generate Single */}
-          <button
-            onClick={() => setShowGenerateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-navy-600 hover:bg-navy-700 rounded-lg transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Generate Report
-          </button>
+          {/* Generate Single (operator only) */}
+          {isOperator && (
+            <button
+              onClick={() => setShowGenerateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-navy-600 hover:bg-navy-700 rounded-lg transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Generate Report
+            </button>
+          )}
         </div>
       </div>
+
+      {!isOperator && (
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+          Reports are read-only for owners. Ask an operator to generate, approve, send, or delete reports.
+        </div>
+      )}
 
       {/* Summary Stats */}
       <div className="grid grid-cols-3 gap-4">
@@ -454,19 +463,22 @@ export function ReportsPage() {
               report={report}
               onDelete={handleDelete}
               isDeleting={deletingId === report.id}
+              canDelete={isOperator}
             />
           ))}
         </div>
       )}
 
       {/* Generate Modal */}
-      <GenerateModal
-        isOpen={showGenerateModal}
-        onClose={() => setShowGenerateModal(false)}
-        tenants={tenants || []}
-        onGenerate={handleGenerate}
-        isGenerating={generateMutation.isPending}
-      />
+      {isOperator && (
+        <GenerateModal
+          isOpen={showGenerateModal}
+          onClose={() => setShowGenerateModal(false)}
+          tenants={tenants || []}
+          onGenerate={handleGenerate}
+          isGenerating={generateMutation.isPending}
+        />
+      )}
     </div>
   )
 }

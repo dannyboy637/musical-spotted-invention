@@ -299,23 +299,33 @@ async def list_import_jobs(
     user: UserPayload = Depends(get_user_with_tenant),
     limit: int = 20,
     offset: int = 0,
+    tenant_id: Optional[str] = None,
 ):
     """List import jobs for user's tenant (or all for operators)."""
     # Include tenant name via join
     query = supabase.table("data_import_jobs").select("*, tenants(name)")
 
     # Debug: Log what we're filtering by
-    print(f"list_import_jobs: role={user.role}, tenant_id={user.tenant_id}", flush=True)
+    print(
+        f"list_import_jobs: role={user.role}, tenant_id={user.tenant_id}, tenant_override={tenant_id}",
+        flush=True,
+    )
 
     # Operators with no active tenant see ALL imports across all tenants
     # Operators with active tenant see only that tenant's imports
     # Non-operators see only their tenant's imports
     if user.role == "operator":
-        if user.tenant_id:
+        selected_tenant = tenant_id or user.tenant_id
+        if selected_tenant:
             # Operator has selected a specific tenant to view
-            query = query.eq("tenant_id", user.tenant_id)
+            query = query.eq("tenant_id", selected_tenant)
         # else: no filter, operators see all tenants
     elif user.tenant_id:
+        if tenant_id and tenant_id != user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot view imports for a different tenant",
+            )
         # Non-operator with assigned tenant
         query = query.eq("tenant_id", user.tenant_id)
     else:
@@ -960,19 +970,39 @@ async def delete_item_exclusion(
             detail="Viewers cannot manage item exclusions"
         )
 
-    result = supabase.table("item_exclusions") \
-        .delete() \
-        .eq("id", exclusion_id) \
+    existing = (
+        supabase.table("item_exclusions")
+        .select("id, tenant_id")
+        .eq("id", exclusion_id)
+        .single()
         .execute()
+    )
+    if not existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Item exclusion not found"
+        )
 
+    target_tenant = existing.data.get("tenant_id")
+    if user.role != "operator" and target_tenant != user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete item exclusions for a different tenant",
+        )
+
+    result = (
+        supabase.table("item_exclusions")
+        .delete()
+        .eq("id", exclusion_id)
+        .eq("tenant_id", target_tenant)
+        .execute()
+    )
     if not result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Item exclusion not found"
         )
 
-    deleted = result.data[0]
-    target_tenant = deleted.get("tenant_id") or user.tenant_id
     if target_tenant:
         data_cache.invalidate_tenant(target_tenant)
         background_tasks.add_task(_refresh_analytics_after_exclusion, target_tenant)
@@ -1190,26 +1220,38 @@ async def delete_transactions(
 @router.get("/health")
 async def data_health_check(
     user: UserPayload = Depends(get_user_with_tenant),
+    tenant_id: Optional[str] = None,
 ):
     """
     Check database health and basic counts for the tenant.
-    Operators without active tenant get aggregate counts.
+    Operators can pass tenant_id to inspect a specific tenant.
+    Operators without active tenant/override get aggregate counts.
     """
+    if user.role == "operator":
+        effective_tenant_id = tenant_id or user.tenant_id
+    else:
+        effective_tenant_id = user.tenant_id
+        if tenant_id and tenant_id != user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot access health data for a different tenant",
+            )
+
     health = {
-        "tenant_id": user.tenant_id,
+        "tenant_id": effective_tenant_id,
         "counts": {},
         "date_range": {"start": None, "end": None},
         "status": "ok",
     }
 
     try:
-        if user.tenant_id:
+        if effective_tenant_id:
             # Specific tenant counts
-            txn_result = supabase.table("transactions").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
-            menu_result = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", user.tenant_id).limit(1).execute()
+            txn_result = supabase.table("transactions").select("id", count="exact").eq("tenant_id", effective_tenant_id).limit(1).execute()
+            menu_result = supabase.table("menu_items").select("id", count="exact").eq("tenant_id", effective_tenant_id).limit(1).execute()
             # Get date range for tenant
-            date_range_result = supabase.table("transactions").select("receipt_timestamp").eq("tenant_id", user.tenant_id).order("receipt_timestamp", desc=False).limit(1).execute()
-            date_range_end_result = supabase.table("transactions").select("receipt_timestamp").eq("tenant_id", user.tenant_id).order("receipt_timestamp", desc=True).limit(1).execute()
+            date_range_result = supabase.table("transactions").select("receipt_timestamp").eq("tenant_id", effective_tenant_id).order("receipt_timestamp", desc=False).limit(1).execute()
+            date_range_end_result = supabase.table("transactions").select("receipt_timestamp").eq("tenant_id", effective_tenant_id).order("receipt_timestamp", desc=True).limit(1).execute()
         elif user.role == "operator":
             # Operators without tenant see all counts
             txn_result = supabase.table("transactions").select("id", count="exact").limit(1).execute()
