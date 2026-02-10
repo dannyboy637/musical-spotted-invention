@@ -92,6 +92,11 @@ export function AppShell() {
 
       {/* Day Deep Dive Modal */}
       <DayDeepDiveModal />
+
+      {/* Build indicator */}
+      <div className="fixed bottom-2 right-2 z-30 text-[10px] font-mono text-slate-400 dark:text-slate-600 opacity-60 hover:opacity-100 transition-opacity select-none pointer-events-none">
+        {__GIT_BRANCH__}@{__GIT_COMMIT__}
+      </div>
     </div>
   )
 }
