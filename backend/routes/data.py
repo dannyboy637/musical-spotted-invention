@@ -1,11 +1,12 @@
 """
 Data import and management routes.
 """
+import asyncio
 import re
 import json
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, Request
 from pydantic import BaseModel
 
 from middleware.auth import (
@@ -14,6 +15,7 @@ from middleware.auth import (
     invalidate_user_cache,
     UserPayload,
 )
+from middleware.rate_limit import limiter
 from db.supabase import supabase
 from services.import_service import ImportService
 from utils.cache import data_cache
@@ -87,10 +89,19 @@ async def process_import_task(
     csv_content: str,
     file_name: str
 ):
-    """Background task to process CSV import."""
+    """Background task to process CSV import.
+
+    Runs sync CSV processing in a thread pool executor to avoid
+    blocking the async event loop (pandas I/O + DB calls are sync).
+    """
+    loop = asyncio.get_event_loop()
     try:
-        import_service.process_csv(csv_content, file_name)
-        import_service.regenerate_menu_items()
+        await loop.run_in_executor(
+            None, import_service.process_csv, csv_content, file_name
+        )
+        await loop.run_in_executor(
+            None, import_service.regenerate_menu_items
+        )
     except Exception as e:
         import_service.update_job_status(
             status="failed",
@@ -103,7 +114,9 @@ async def process_import_task(
 # ============================================
 
 @router.post("/upload", response_model=UploadResponse)
+@limiter.limit("20/minute")
 async def upload_csv(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     tenant_id: Optional[str] = None,  # Operators can specify target tenant

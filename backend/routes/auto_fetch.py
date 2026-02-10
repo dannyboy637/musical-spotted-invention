@@ -2,13 +2,17 @@
 Auto-fetch routes - trigger StoreHub CSV fetch via API.
 
 Protected by a secret token to prevent unauthorized access.
+Token must be sent via Authorization header (Bearer <token>),
+not as a URL query parameter, to avoid leaking in logs/referer headers.
 """
 import os
+import hmac
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Request
 from pydantic import BaseModel
 
+from middleware.rate_limit import limiter
 from services.import_service import ImportService
 
 # Lazy import to avoid circular dependencies
@@ -35,12 +39,23 @@ class FetchResult(BaseModel):
     rows_duplicates: int | None = None
 
 
+def extract_bearer_token(request: Request) -> str:
+    """Extract token from Authorization: Bearer <token> header."""
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid Authorization header. Use: Authorization: Bearer <token>"
+        )
+    return auth_header[7:]
+
+
 def verify_token(token: str) -> bool:
-    """Verify the auto-fetch secret token."""
+    """Verify the auto-fetch secret token using constant-time comparison."""
     expected_token = os.getenv("AUTO_FETCH_SECRET")
     if not expected_token:
         return False
-    return token == expected_token
+    return hmac.compare_digest(token, expected_token)
 
 
 def run_fetch(tenant_subdomain: str, username: str, password: str, tenant_id: str, fetch_date: str | None = None):
@@ -144,19 +159,21 @@ def run_fetch(tenant_subdomain: str, username: str, password: str, tenant_id: st
 
 
 @router.post("/trigger", response_model=FetchResult)
+@limiter.limit("20/minute")
 async def trigger_fetch(
+    request: Request,
     background_tasks: BackgroundTasks,
-    token: str = Query(..., description="Secret token for authentication"),
     date: str | None = Query(None, description="Optional date to fetch (MM/DD/YYYY). Defaults to yesterday."),
     sync: bool = Query(False, description="Run synchronously (wait for result). Default: run in background."),
 ):
     """
     Trigger StoreHub auto-fetch for Spotted Pig.
 
-    Protected by AUTO_FETCH_SECRET token.
+    Protected by AUTO_FETCH_SECRET token via Authorization header.
     By default runs in background and returns immediately.
     """
-    # Verify token
+    # Verify token from Authorization header
+    token = extract_bearer_token(request)
     if not verify_token(token):
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -193,13 +210,10 @@ async def trigger_fetch(
 async def health():
     """Health check for the auto-fetch endpoint."""
     subdomain = os.getenv("STOREHUB_SUBDOMAIN")
-    tenant_id = os.getenv("TARGET_TENANT_ID")
     secret_configured = bool(os.getenv("AUTO_FETCH_SECRET"))
 
     return {
         "status": "ok",
-        "configured": bool(subdomain and tenant_id),
+        "configured": bool(subdomain and os.getenv("TARGET_TENANT_ID")),
         "secret_configured": secret_configured,
-        "tenant_subdomain": subdomain,
-        "tenant_id": tenant_id,
     }

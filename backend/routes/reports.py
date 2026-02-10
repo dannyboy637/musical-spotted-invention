@@ -5,10 +5,11 @@ Provides endpoints for generating, previewing, approving, and sending weekly rep
 """
 from typing import Optional, List, Literal
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel
 
 from middleware.auth import get_user_with_tenant, UserPayload
+from middleware.rate_limit import limiter
 from db.supabase import supabase
 from modules.reports import generate_report_data, get_period_bounds, PeriodType
 from services.ai_narrative import generate_narrative, NarrativeStyle
@@ -95,7 +96,9 @@ def get_tenant_info(tenant_id: str) -> dict:
 # ============================================
 
 @router.post("/generate", response_model=ReportResponse)
+@limiter.limit("20/minute")
 async def generate_report(
+    request: Request,
     body: GenerateReportRequest,
     user: UserPayload = Depends(get_user_with_tenant),
 ):
@@ -515,7 +518,9 @@ async def approve_report(
 
 
 @router.post("/{report_id}/send")
+@limiter.limit("20/minute")
 async def send_report(
+    request: Request,
     report_id: str,
     body: SendReportRequest = None,
     user: UserPayload = Depends(get_user_with_tenant),
@@ -645,7 +650,9 @@ async def delete_report(
 # ============================================
 
 @router.post("/generate-all")
+@limiter.limit("20/minute")
 async def generate_all_reports(
+    request: Request,
     user: UserPayload = Depends(get_user_with_tenant),
     narrative_style: NarrativeStyle = "full",
 ):

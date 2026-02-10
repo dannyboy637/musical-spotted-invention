@@ -17,13 +17,13 @@ from routes.analytics import (
     parse_filters,
     AnalyticsFilters,
     calculate_quadrant,
-    get_effective_tenant_id,
     get_daypart,
     OverviewResponse,
     MenuEngineeringItem,
     MenuEngineeringResponse,
 )
 from middleware.auth import UserPayload
+from middleware.auth_helpers import get_effective_tenant_id
 from fastapi import HTTPException
 
 
@@ -116,6 +116,12 @@ class TestGetEffectiveTenantId:
         result = get_effective_tenant_id(user, None)
         assert result == "own-tenant"
 
+    def test_operator_no_tenant_no_override_raises_400(self):
+        user = UserPayload(sub="u1", role="operator", tenant_id=None)
+        with pytest.raises(HTTPException) as exc_info:
+            get_effective_tenant_id(user)
+        assert exc_info.value.status_code == 400
+
     def test_owner_uses_own_tenant(self):
         user = UserPayload(sub="u1", role="owner", tenant_id="owner-tenant")
         result = get_effective_tenant_id(user)
@@ -124,23 +130,23 @@ class TestGetEffectiveTenantId:
     def test_owner_ignores_override(self):
         """Non-operators should use their own tenant even if override passed."""
         user = UserPayload(sub="u1", role="owner", tenant_id="owner-tenant")
-        # The function actually falls back to tenant_id_override if user has no tenant_id
-        # But with tenant_id set, it returns user.tenant_id first
         result = get_effective_tenant_id(user, "override")
         assert result == "owner-tenant"
 
-    def test_no_tenant_raises_400(self):
+    def test_viewer_no_tenant_raises_403(self):
+        """Viewers without tenant_id should get 403, not be allowed to use override."""
         user = UserPayload(sub="u1", role="viewer", tenant_id=None)
         with pytest.raises(HTTPException) as exc_info:
             get_effective_tenant_id(user)
-        assert exc_info.value.status_code == 400
+        assert exc_info.value.status_code == 403
         assert "no tenant" in exc_info.value.detail.lower()
 
-    def test_viewer_with_override_uses_override(self):
-        """Fallback: if user has no tenant_id but override is provided, use it."""
+    def test_viewer_with_override_still_raises_403(self):
+        """Non-operators without tenant_id must NOT fall back to override (security fix)."""
         user = UserPayload(sub="u1", role="viewer", tenant_id=None)
-        result = get_effective_tenant_id(user, "fallback-tenant")
-        assert result == "fallback-tenant"
+        with pytest.raises(HTTPException) as exc_info:
+            get_effective_tenant_id(user, "attacker-tenant")
+        assert exc_info.value.status_code == 403
 
 
 # =============================================

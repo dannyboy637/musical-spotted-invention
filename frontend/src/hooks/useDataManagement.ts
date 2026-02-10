@@ -55,7 +55,7 @@ export interface DataHealthResponse {
 }
 
 // Hook to list import jobs
-export function useImportJobs(limit = 20, offset = 0) {
+export function useImportJobs(limit = 20, offset = 0, options?: { pollingWhileProcessing?: boolean }) {
   const { session } = useAuthStore()
   const { activeTenant } = useTenantStore()
 
@@ -73,6 +73,14 @@ export function useImportJobs(limit = 20, offset = 0) {
       return response.data
     },
     enabled: !!session?.access_token,
+    // Poll every 3s when any job is pending/processing
+    refetchInterval: options?.pollingWhileProcessing
+      ? (query) => {
+          const jobs = query.state.data
+          const hasActive = jobs?.some(j => j.status === 'pending' || j.status === 'processing')
+          return hasActive ? 3000 : false
+        }
+      : undefined,
   })
 }
 

@@ -246,10 +246,14 @@ def _get_kpis(tenant_id: str, start_date: str, end_date: str) -> dict:
 
 
 def _get_top_items(tenant_id: str, start_date: str, end_date: str, limit: int = 5) -> List[dict]:
-    """Get top items by revenue for the period."""
-    # Query transactions aggregated by item
+    """Get top items by revenue for the period.
+
+    Aggregates revenue and quantity directly from transactions within
+    the date range instead of using the menu_items table (which stores
+    all-time totals and would misrepresent period-specific performance).
+    """
     result = supabase.table("transactions").select(
-        "item_name, category"
+        "item_name, category, gross_revenue, quantity"
     ).eq("tenant_id", tenant_id).gte(
         "receipt_timestamp", start_date
     ).lte(
@@ -259,7 +263,7 @@ def _get_top_items(tenant_id: str, start_date: str, end_date: str, limit: int = 
     if not result.data:
         return []
 
-    # Aggregate in Python (since we need to SUM across rows)
+    # Aggregate revenue and quantity by item from transactions
     item_totals = {}
     for row in result.data:
         item_name = row.get("item_name", "Unknown")
@@ -267,30 +271,14 @@ def _get_top_items(tenant_id: str, start_date: str, end_date: str, limit: int = 
             item_totals[item_name] = {
                 "item_name": item_name,
                 "category": row.get("category", "Uncategorized"),
-                "count": 0,
+                "revenue": 0,
+                "quantity": 0,
             }
-        item_totals[item_name]["count"] += 1
-
-    # Get menu_items for revenue data
-    menu_result = supabase.table("menu_items").select(
-        "item_name, total_gross_revenue, total_quantity"
-    ).eq("tenant_id", tenant_id).eq("is_excluded", False).execute()
-
-    menu_data = {m["item_name"]: m for m in (menu_result.data or [])}
-
-    # Enhance with revenue data
-    items = []
-    for item_name, item_data in item_totals.items():
-        menu_item = menu_data.get(item_name, {})
-        items.append({
-            "item_name": item_name,
-            "category": item_data["category"],
-            "revenue": menu_item.get("total_gross_revenue", 0),
-            "quantity": menu_item.get("total_quantity", 0),
-        })
+        item_totals[item_name]["revenue"] += row.get("gross_revenue", 0) or 0
+        item_totals[item_name]["quantity"] += row.get("quantity", 0) or 0
 
     # Sort by revenue descending
-    items.sort(key=lambda x: x["revenue"], reverse=True)
+    items = sorted(item_totals.values(), key=lambda x: x["revenue"], reverse=True)
     return items[:limit]
 
 

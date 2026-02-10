@@ -82,7 +82,11 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         response_time_ms: int,
         status_code: int,
     ) -> None:
-        """Log metric to database asynchronously."""
+        """Log metric to database asynchronously.
+
+        Uses run_in_executor to avoid blocking the event loop with
+        the synchronous supabase .execute() call.
+        """
         try:
             # Import here to avoid circular imports
             from db.supabase import supabase
@@ -96,7 +100,11 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             if tenant_id:
                 data["tenant_id"] = tenant_id
 
-            supabase.table("api_metrics").insert(data).execute()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: supabase.table("api_metrics").insert(data).execute(),
+            )
 
         except Exception as e:
             # Don't let metrics logging errors affect the request
@@ -159,7 +167,11 @@ async def log_error(
         if duration_ms is not None:
             data["duration_ms"] = duration_ms
 
-        supabase.table("error_logs").insert(data).execute()
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: supabase.table("error_logs").insert(data).execute(),
+        )
 
         # Send email alert for critical errors (5xx)
         if send_alert and status_code >= 500:

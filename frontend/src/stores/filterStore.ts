@@ -68,7 +68,7 @@ export const useFilterStore = create<FilterState>()((set) => ({
 }))
 
 // URL param helpers - used by components
-export function filtersToSearchParams(state: FilterState): URLSearchParams {
+export function filtersToSearchParams(state: Pick<FilterState, 'dateRange' | 'branches' | 'categories'>): URLSearchParams {
   const params = new URLSearchParams()
 
   if (state.dateRange) {
