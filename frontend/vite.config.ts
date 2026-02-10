@@ -4,6 +4,13 @@ import path from 'path';
 import { execSync } from 'child_process';
 
 function gitInfo() {
+  // Vercel provides these env vars in builds (no .git dir available)
+  const vercelSha = process.env.VERCEL_GIT_COMMIT_SHA;
+  const vercelRef = process.env.VERCEL_GIT_COMMIT_REF;
+  if (vercelSha && vercelRef) {
+    return { commit: vercelSha.slice(0, 7), branch: vercelRef };
+  }
+  // Local/other CI: use git directly
   try {
     const commit = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
     const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
