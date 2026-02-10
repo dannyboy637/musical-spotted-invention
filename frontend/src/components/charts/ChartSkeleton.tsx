@@ -61,7 +61,7 @@ export function ChartSkeleton({ type, height = 300 }: ChartSkeletonProps) {
               <div
                 key={i}
                 className={baseClass}
-                style={{ opacity: 0.3 + ((i * 7 + 3) % 10) * 0.05 }}
+                style={{ opacity: 0.3 + Math.random() * 0.5 }}
               />
             ))}
           </div>

@@ -250,6 +250,8 @@ class CategoryItemsResponse(BaseModel):
     total_items: int
     total_revenue: int
     total_quantity: int
+    truncated: bool = False
+    max_rows: Optional[int] = None
     filters_applied: dict
     generated_at: str
 
@@ -935,7 +937,8 @@ async def get_category_items(
 
     def fetch_category_items():
         # Query transactions directly to support branch filtering
-        data, _truncated = fetch_all_transactions(
+        cat_max_rows = 100000
+        data, truncated = fetch_all_transactions(
             effective_tenant_id,
             AnalyticsFilters(
                 start_date=filters.start_date,
@@ -944,7 +947,7 @@ async def get_category_items(
                 categories=[category]  # Filter to specific category
             ),
             "item_name, gross_revenue, quantity",
-            max_rows=100000
+            max_rows=cat_max_rows
         )
 
         # Filter out excluded items
@@ -992,6 +995,8 @@ async def get_category_items(
             "items": items,
             "total_revenue": total_revenue,
             "total_quantity": total_quantity,
+            "truncated": truncated,
+            "max_rows": cat_max_rows if truncated else None,
         }
 
     data = data_cache.get_or_fetch(
@@ -1011,6 +1016,8 @@ async def get_category_items(
         total_items=len(data.get("items", [])),
         total_revenue=data.get("total_revenue", 0),
         total_quantity=data.get("total_quantity", 0),
+        truncated=data.get("truncated", False),
+        max_rows=data.get("max_rows"),
         filters_applied={
             "category": category,
             **filters.model_dump(exclude_none=True),
@@ -1041,96 +1048,20 @@ async def get_category_by_branch(
     filters = parse_filters(start_date, end_date, None, None)
 
     def fetch_category_by_branch():
-        # Query transactions grouped by branch
-        cat_max_rows = 100000
-        data, cat_truncated = fetch_all_transactions(
-            effective_tenant_id,
-            AnalyticsFilters(
-                start_date=filters.start_date,
-                end_date=filters.end_date,
-                branches=None,  # Get all branches
-                categories=[category]
-            ),
-            "store_name, item_name, gross_revenue, quantity",
-            max_rows=cat_max_rows
-        )
+        # Use database-level aggregation via RPC
+        result = supabase.rpc("get_category_by_branch_agg", {
+            "p_tenant_id": effective_tenant_id,
+            "p_category": category,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+        }).execute()
 
-        # Aggregate by branch
-        branch_totals = {}
-        branch_items = {}  # Track items per branch for top item
-
-        for row in data:
-            branch = row.get("store_name", "Unknown")
-            item_name = row.get("item_name", "Unknown")
-            revenue = row.get("gross_revenue", 0) or 0
-            qty = row.get("quantity", 0) or 0
-
-            if branch not in branch_totals:
-                branch_totals[branch] = {"revenue": 0, "quantity": 0, "items": set()}
-                branch_items[branch] = {}
-
-            branch_totals[branch]["revenue"] += revenue
-            branch_totals[branch]["quantity"] += qty
-            branch_totals[branch]["items"].add(item_name)
-
-            # Track item revenue for top item
-            if item_name not in branch_items[branch]:
-                branch_items[branch][item_name] = 0
-            branch_items[branch][item_name] += revenue
-
-        # Get total revenue per branch (all categories) for percentage calculation
-        # This requires a separate query
-        all_branch_data, all_truncated = fetch_all_transactions(
-            effective_tenant_id,
-            AnalyticsFilters(
-                start_date=filters.start_date,
-                end_date=filters.end_date,
-                branches=None,
-                categories=None
-            ),
-            "store_name, gross_revenue",
-            max_rows=200000
-        )
-
-        truncated = cat_truncated or all_truncated
-
-        branch_total_revenue = {}
-        for row in all_branch_data:
-            branch = row.get("store_name", "Unknown")
-            revenue = row.get("gross_revenue", 0) or 0
-            if branch not in branch_total_revenue:
-                branch_total_revenue[branch] = 0
-            branch_total_revenue[branch] += revenue
-
-        # Build response
-        branches = []
-        for branch, totals in sorted(
-            branch_totals.items(),
-            key=lambda x: x[1]["revenue"],
-            reverse=True
-        ):
-            total_rev = branch_total_revenue.get(branch, 0)
-            pct = (totals["revenue"] / total_rev * 100) if total_rev > 0 else 0
-            avg_price = totals["revenue"] / totals["quantity"] if totals["quantity"] > 0 else 0
-
-            # Find top item
-            items_by_rev = branch_items.get(branch, {})
-            top_item = max(items_by_rev.items(), key=lambda x: x[1])[0] if items_by_rev else "N/A"
-
-            branches.append({
-                "branch": branch,
-                "revenue": totals["revenue"],
-                "quantity": totals["quantity"],
-                "avg_price": round(avg_price, 2),
-                "item_count": len(totals["items"]),
-                "percentage_of_branch": round(pct, 1),
-                "top_item": top_item,
-            })
+        branches = result.data or []
 
         return {
             "branches": branches,
-            "truncated": truncated,
-            "max_rows": cat_max_rows if truncated else None,
+            "truncated": False,
+            "max_rows": None,
         }
 
     data = data_cache.get_or_fetch(

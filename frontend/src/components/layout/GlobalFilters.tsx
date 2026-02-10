@@ -47,12 +47,11 @@ export function GlobalFilters() {
     if (urlFilters.categories) {
       setCategories(urlFilters.categories)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on mount
-  }, [])
+  }, []) // Only on mount
 
   // Sync to URL when filters change
   useEffect(() => {
-    const params = filtersToSearchParams({ dateRange, branches, categories })
+    const params = filtersToSearchParams({ dateRange, branches, categories } as any)
 
     // Only update if params actually changed
     const currentParams = searchParams.toString()
@@ -61,7 +60,7 @@ export function GlobalFilters() {
     if (currentParams !== newParams) {
       setSearchParams(params, { replace: true })
     }
-  }, [dateRange, branches, categories, searchParams, setSearchParams])
+  }, [dateRange, branches, categories])
 
   return (
     <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">

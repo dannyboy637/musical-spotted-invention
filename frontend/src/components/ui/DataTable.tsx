@@ -89,13 +89,18 @@ export function DataTable<T extends object>({
 
   // Pagination logic
   const totalPages = paginated ? Math.ceil(sortedData.length / tableRowsPerPage) : 1
-  // Reset to page 1 when current page exceeds total pages
-  const effectivePage = (currentPage > totalPages && totalPages > 0) ? 1 : currentPage
   const paginatedData = useMemo(() => {
     if (!paginated) return sortedData
-    const startIndex = (effectivePage - 1) * tableRowsPerPage
+    const startIndex = (currentPage - 1) * tableRowsPerPage
     return sortedData.slice(startIndex, startIndex + tableRowsPerPage)
-  }, [sortedData, paginated, effectivePage, tableRowsPerPage])
+  }, [sortedData, paginated, currentPage, tableRowsPerPage])
+
+  // Reset to page 1 when data changes
+  useMemo(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1)
+    }
+  }, [totalPages, currentPage])
 
   const getCellValue = (row: T, column: Column<T>): unknown => {
     if (column.getValue) {
@@ -199,12 +204,12 @@ export function DataTable<T extends object>({
       {paginated && totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
           <div className="text-sm text-slate-600">
-            Showing {((effectivePage - 1) * tableRowsPerPage) + 1} to {Math.min(effectivePage * tableRowsPerPage, sortedData.length)} of {sortedData.length} items
+            Showing {((currentPage - 1) * tableRowsPerPage) + 1} to {Math.min(currentPage * tableRowsPerPage, sortedData.length)} of {sortedData.length} items
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={effectivePage === 1}
+              disabled={currentPage === 1}
               className="p-1.5 rounded hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={18} className="text-slate-600" />
@@ -214,19 +219,19 @@ export function DataTable<T extends object>({
                 let pageNum: number
                 if (totalPages <= 5) {
                   pageNum = i + 1
-                } else if (effectivePage <= 3) {
+                } else if (currentPage <= 3) {
                   pageNum = i + 1
-                } else if (effectivePage >= totalPages - 2) {
+                } else if (currentPage >= totalPages - 2) {
                   pageNum = totalPages - 4 + i
                 } else {
-                  pageNum = effectivePage - 2 + i
+                  pageNum = currentPage - 2 + i
                 }
                 return (
                   <button
                     key={pageNum}
                     onClick={() => setCurrentPage(pageNum)}
                     className={`w-8 h-8 rounded text-sm font-medium transition-colors ${
-                      pageNum === effectivePage
+                      pageNum === currentPage
                         ? 'bg-navy-600 text-white'
                         : 'text-slate-600 hover:bg-slate-200'
                     }`}
@@ -238,7 +243,7 @@ export function DataTable<T extends object>({
             </div>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={effectivePage === totalPages}
+              disabled={currentPage === totalPages}
               className="p-1.5 rounded hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight size={18} className="text-slate-600" />

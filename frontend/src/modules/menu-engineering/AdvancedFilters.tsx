@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { formatCurrency } from '../../lib/chartConfig'
 
@@ -30,18 +30,11 @@ export function AdvancedFilters({ values, onChange, showApplyButton = true }: Ad
   )
 
   // Sync local state when values change from parent (e.g., on clear)
-  // This is a controlled-reset pattern: parent clears applied filters, we reset local inputs
-  const [prevValues, setPrevValues] = useState(values)
-  if (
-    prevValues.minPrice !== values.minPrice ||
-    prevValues.maxPrice !== values.maxPrice ||
-    prevValues.minQuantity !== values.minQuantity
-  ) {
-    setPrevValues(values)
+  useEffect(() => {
     setLocalMinPrice(values.minPrice != null ? String(values.minPrice / 100) : '')
     setLocalMaxPrice(values.maxPrice != null ? String(values.maxPrice / 100) : '')
     setLocalMinQty(values.minQuantity != null ? String(values.minQuantity) : '')
-  }
+  }, [values.minPrice, values.maxPrice, values.minQuantity])
 
   const hasActiveFilters =
     values.minPrice != null || values.maxPrice != null || values.minQuantity != null

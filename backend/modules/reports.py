@@ -246,48 +246,19 @@ def _get_kpis(tenant_id: str, start_date: str, end_date: str) -> dict:
 
 
 def _get_top_items(tenant_id: str, start_date: str, end_date: str, limit: int = 5) -> List[dict]:
-    """Get top items by revenue for the period.
+    """Get top items by revenue for the period using database-level aggregation."""
+    result = supabase.rpc("get_report_top_items", {
+        "p_tenant_id": tenant_id,
+        "p_start_date": start_date,
+        "p_end_date": end_date,
+        "p_limit": limit,
+    }).execute()
 
-    Aggregates revenue and quantity directly from transactions within
-    the date range instead of using the menu_items table (which stores
-    all-time totals and would misrepresent period-specific performance).
-    """
-    result = supabase.table("transactions").select(
-        "item_name, category, gross_revenue, quantity"
-    ).eq("tenant_id", tenant_id).gte(
-        "receipt_timestamp", start_date
-    ).lte(
-        "receipt_timestamp", f"{end_date}T23:59:59"
-    ).eq("is_excluded", False).execute()
-
-    if not result.data:
-        return []
-
-    # Aggregate revenue and quantity by item from transactions
-    item_totals = {}
-    for row in result.data:
-        item_name = row.get("item_name", "Unknown")
-        if item_name not in item_totals:
-            item_totals[item_name] = {
-                "item_name": item_name,
-                "category": row.get("category", "Uncategorized"),
-                "revenue": 0,
-                "quantity": 0,
-            }
-        item_totals[item_name]["revenue"] += row.get("gross_revenue", 0) or 0
-        item_totals[item_name]["quantity"] += row.get("quantity", 0) or 0
-
-    # Sort by revenue descending
-    items = sorted(item_totals.values(), key=lambda x: x["revenue"], reverse=True)
-    return items[:limit]
+    return result.data or []
 
 
 def _get_movers(tenant_id: str, start_date: str, end_date: str) -> tuple[list, list]:
-    """
-    Get items with biggest revenue changes vs previous period.
-
-    Returns (gainers, decliners) as lists of dicts.
-    """
+    """Get items with biggest revenue changes vs previous period using database-level aggregation."""
     # Calculate previous period
     start_dt = datetime.fromisoformat(start_date)
     end_dt = datetime.fromisoformat(end_date)
@@ -295,76 +266,16 @@ def _get_movers(tenant_id: str, start_date: str, end_date: str) -> tuple[list, l
     prev_end = start_dt - timedelta(days=1)
     prev_start = prev_end - timedelta(days=period_days - 1)
 
-    # Get current period item revenue (using menu_items snapshot)
-    # Note: For accurate period comparison, we'd need transaction-level aggregation
-    # For now, use menu_items as a baseline
+    result = supabase.rpc("get_report_movers", {
+        "p_tenant_id": tenant_id,
+        "p_start_date": start_date,
+        "p_end_date": end_date,
+        "p_prev_start": prev_start.strftime("%Y-%m-%d"),
+        "p_prev_end": prev_end.strftime("%Y-%m-%d"),
+    }).execute()
 
-    # Get items sold in current period
-    current_result = supabase.table("transactions").select(
-        "item_name, gross_revenue"
-    ).eq("tenant_id", tenant_id).gte(
-        "receipt_timestamp", start_date
-    ).lte(
-        "receipt_timestamp", f"{end_date}T23:59:59"
-    ).eq("is_excluded", False).execute()
-
-    current_items = {}
-    for row in (current_result.data or []):
-        item_name = row.get("item_name", "Unknown")
-        if item_name not in current_items:
-            current_items[item_name] = 0
-        current_items[item_name] += row.get("gross_revenue", 0)
-
-    # Get items sold in previous period
-    prev_result = supabase.table("transactions").select(
-        "item_name, gross_revenue"
-    ).eq("tenant_id", tenant_id).gte(
-        "receipt_timestamp", prev_start.strftime("%Y-%m-%d")
-    ).lte(
-        "receipt_timestamp", f"{prev_end.strftime('%Y-%m-%d')}T23:59:59"
-    ).eq("is_excluded", False).execute()
-
-    prev_items = {}
-    for row in (prev_result.data or []):
-        item_name = row.get("item_name", "Unknown")
-        if item_name not in prev_items:
-            prev_items[item_name] = 0
-        prev_items[item_name] += row.get("gross_revenue", 0)
-
-    # Calculate changes
-    all_items = set(current_items.keys()) | set(prev_items.keys())
-    changes = []
-
-    for item_name in all_items:
-        current_rev = current_items.get(item_name, 0)
-        prev_rev = prev_items.get(item_name, 0)
-
-        if prev_rev > 0:
-            change_pct = round(((current_rev - prev_rev) / prev_rev) * 100, 1)
-        elif current_rev > 0:
-            change_pct = 100.0  # New item
-        else:
-            continue  # Skip items with no sales in either period
-
-        changes.append({
-            "item_name": item_name,
-            "current_revenue": current_rev,
-            "previous_revenue": prev_rev,
-            "change_pct": change_pct,
-            "change_amount": current_rev - prev_rev,
-        })
-
-    # Sort and split into gainers/decliners
-    # Only include items with meaningful revenue (filter out noise)
-    min_revenue = 10000  # ₱100 minimum
-
-    gainers = [c for c in changes if c["change_pct"] > 0 and c["current_revenue"] >= min_revenue]
-    decliners = [c for c in changes if c["change_pct"] < 0 and c["previous_revenue"] >= min_revenue]
-
-    gainers.sort(key=lambda x: x["change_pct"], reverse=True)
-    decliners.sort(key=lambda x: x["change_pct"])
-
-    return gainers, decliners
+    data = result.data or {}
+    return data.get("gainers", []), data.get("decliners", [])
 
 
 def _get_active_alerts(tenant_id: str, limit: int = 10) -> List[dict]:

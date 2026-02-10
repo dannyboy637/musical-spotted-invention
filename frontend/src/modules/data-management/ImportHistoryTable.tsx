@@ -202,7 +202,7 @@ function JobRow({ job, onCancel, onDelete, cancellingJobId, deletingJobId, isOpe
 }
 
 export function ImportHistoryTable() {
-  const { data: jobs, isLoading, error, refetch } = useImportJobs(20, 0, { pollingWhileProcessing: true })
+  const { data: jobs, isLoading, error, refetch } = useImportJobs(20, 0)
   const cancelMutation = useCancelImportJob()
   const deleteMutation = useDeleteImportJob()
   const { profile } = useAuthStore()
@@ -211,6 +211,14 @@ export function ImportHistoryTable() {
   // Track which job is currently being operated on
   const [cancellingJobId, setCancellingJobId] = useState<string | null>(null)
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null)
+
+  // Check if any job is processing - if so, enable auto-refresh
+  const hasProcessingJob = jobs?.some(j => j.status === 'pending' || j.status === 'processing')
+
+  // Refetch every 3 seconds if there's a processing job
+  if (hasProcessingJob) {
+    setTimeout(() => refetch(), 3000)
+  }
 
   const handleCancel = async (jobId: string) => {
     setCancellingJobId(jobId)

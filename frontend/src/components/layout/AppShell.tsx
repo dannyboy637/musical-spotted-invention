@@ -41,7 +41,7 @@ export function AppShell() {
     if (session?.access_token && activeTenant) {
       fetchFilterOptions(session.access_token, activeTenant.id)
     }
-  }, [session?.access_token, activeTenant, fetchFilterOptions])
+  }, [session?.access_token, activeTenant?.id, fetchFilterOptions])
 
   // Apply default date range on first load (when no range is set)
   // Re-run when defaultDateRange changes to pick up the setting after zustand hydrates from localStorage
@@ -52,7 +52,7 @@ export function AppShell() {
         setDateRange(range)
       }
     }
-  }, [activeTenant, defaultDateRange, dateRange, setDateRange])
+  }, [activeTenant?.id, defaultDateRange, dateRange, setDateRange])
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
