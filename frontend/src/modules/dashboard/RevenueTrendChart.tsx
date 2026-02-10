@@ -15,7 +15,7 @@ export function RevenueTrendChart() {
     if (!data?.daily?.length) return 0
     const total = data.daily.reduce((sum, d) => sum + d.revenue, 0)
     return Math.round(total / data.daily.length)
-  }, [data?.daily])
+  }, [data])
 
   // Calculate 7-day moving average and transform data
   const chartData = useMemo(() => {
@@ -37,7 +37,7 @@ export function RevenueTrendChart() {
 
       return baseData
     })
-  }, [data?.daily, showMovingAvg])
+  }, [data, showMovingAvg])
 
   const formatDate = (dateStr: string) => {
     try {

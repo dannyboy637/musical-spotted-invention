@@ -70,7 +70,7 @@ export function SameDayTrend() {
       formattedDate: format(parseISO(d.date), 'MMM d, yyyy'),
       shortDate: format(parseISO(d.date), 'MMM d'),
     }))
-  }, [data?.same_day_trend])
+  }, [data])
 
   // Calculate trend (compare last 4 weeks avg to previous 4 weeks avg)
   const trend = useMemo(() => {

@@ -16,7 +16,6 @@ interface QuadrantChartProps {
 
 export function QuadrantChart({
   selectedQuadrant,
-  onItemClick: _onItemClick,
   macroCategory,
   minPrice,
   maxPrice,

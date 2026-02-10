@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -91,14 +91,14 @@ export function ReportPreviewPage() {
   const [recipientEmail, setRecipientEmail] = useState('')
   const [showSendModal, setShowSendModal] = useState(false)
 
-  // Sync local state with report data
-  useEffect(() => {
-    if (report) {
-      setEditedNarrative(report.narrative_text || '')
-      setNarrativeStyle(report.narrative_style as NarrativeStyle)
-      setRecipientEmail(report.recipient_email || '')
-    }
-  }, [report])
+  // Sync local state with report data using "adjust state during render" pattern
+  const [prevReportId, setPrevReportId] = useState<string | undefined>(undefined)
+  if (report && report.id !== prevReportId) {
+    setPrevReportId(report.id)
+    setEditedNarrative(report.narrative_text || '')
+    setNarrativeStyle(report.narrative_style as NarrativeStyle)
+    setRecipientEmail(report.recipient_email || '')
+  }
 
   // Only operators can access
   if (profile?.role !== 'operator') {

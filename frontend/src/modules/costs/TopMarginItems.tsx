@@ -40,7 +40,7 @@ export function TopMarginItems({ costOverrides }: TopMarginItemsProps) {
       })
       .sort((a, b) => b.margin - a.margin)
       .slice(0, 10)
-  }, [data?.items, costOverrides])
+  }, [data, costOverrides])
 
   const columns: Column<ItemWithMargin>[] = [
     {

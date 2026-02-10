@@ -26,16 +26,19 @@ const presets: { label: string; getValue: () => { start: Date; end: Date } | nul
 
 export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [range, setRange] = useState<DateRange | undefined>(
-    value ? { from: value.start, to: value.end } : undefined
-  )
+  // Track in-progress selection (partial range where user picked "from" but not "to" yet)
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>(undefined)
   const ref = useRef<HTMLDivElement>(null)
+
+  // Derive the displayed range from props, with pending selection taking priority
+  const range = pendingRange ?? (value ? { from: value.start, to: value.end } : undefined)
 
   // Close on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) {
         setIsOpen(false)
+        setPendingRange(undefined)
       }
     }
 
@@ -43,25 +46,22 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Sync internal state with prop
-  useEffect(() => {
-    setRange(value ? { from: value.start, to: value.end } : undefined)
-  }, [value])
-
   const handleSelect = (selectedRange: DateRange | undefined) => {
-    setRange(selectedRange)
     if (selectedRange?.from && selectedRange?.to) {
+      setPendingRange(undefined)
       onChange({ start: selectedRange.from, end: selectedRange.to })
+    } else {
+      // Partial selection in progress (user picked "from" but not "to")
+      setPendingRange(selectedRange)
     }
   }
 
   const handlePreset = (getValue: () => { start: Date; end: Date } | null) => {
     const result = getValue()
+    setPendingRange(undefined)
     if (result === null) {
-      setRange(undefined)
       onChange(null)
     } else {
-      setRange({ from: result.start, to: result.end })
       onChange(result)
     }
     setIsOpen(false)
@@ -69,7 +69,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
 
   const clear = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setRange(undefined)
+    setPendingRange(undefined)
     onChange(null)
   }
 

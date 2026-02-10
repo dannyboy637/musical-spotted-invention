@@ -80,6 +80,7 @@ export function CSVUploadForm() {
       queryClient.invalidateQueries({ queryKey: ['import-jobs'] })
       queryClient.invalidateQueries({ queryKey: ['data-health'] })
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to status changes, not full object refs
   }, [jobData?.status, currentFileId, currentFile?.status, queryClient])
 
   // Auto-start next pending file when current one finishes
@@ -91,6 +92,7 @@ export function CSVUploadForm() {
         uploadFileById(pendingFile.id)
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- uploadFileById is unstable; only re-run on file list/current changes
   }, [currentFileId, files])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -110,6 +112,7 @@ export function CSVUploadForm() {
 
     const droppedFiles = Array.from(e.dataTransfer.files)
     addFiles(droppedFiles)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- addFiles is unstable; drag handler only needs stable identity
   }, [])
 
   const validateFile = (file: File): string | null => {

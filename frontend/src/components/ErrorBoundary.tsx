@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- ErrorBoundary requires a class component which doesn't support fast refresh */
 import { Component, type ReactNode } from 'react'
 import { AlertTriangle, Home, RefreshCw } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
