@@ -4,7 +4,7 @@ Tests filter parsing, quadrant calculation, tenant ID resolution, and response s
 """
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
@@ -287,8 +287,8 @@ class TestOverviewEndpoint:
 
         with patch("routes.analytics.supabase", mock_sb), \
              patch("routes.analytics.data_cache") as mock_cache:
-            # Make cache pass through to the fetch function
-            mock_cache.get_or_fetch.side_effect = lambda prefix, fetch_fn, **kw: fetch_fn()
+            # Make cache pass through to the fetch function (async version)
+            mock_cache.get_or_fetch_async = AsyncMock(side_effect=lambda prefix, fetch_fn, **kw: fetch_fn())
 
             result = await get_overview(
                 user=mock_user,
@@ -322,7 +322,10 @@ class TestMenuEngineeringEndpoint:
         mock_rpc_chain.execute.return_value = mock_rpc_result
         mock_sb.rpc.return_value = mock_rpc_chain
 
-        with patch("routes.analytics.supabase", mock_sb):
+        with patch("routes.analytics.supabase", mock_sb), \
+             patch("routes.analytics.data_cache") as mock_cache:
+            mock_cache.get_or_fetch_async = AsyncMock(side_effect=lambda prefix, fetch_fn, **kw: fetch_fn())
+
             result = await get_menu_engineering(
                 user=mock_user,
                 tenant_id=None,
@@ -407,7 +410,10 @@ class TestMenuEngineeringEndpoint:
         mock_rpc_chain.execute.return_value = mock_rpc_result
         mock_sb.rpc.return_value = mock_rpc_chain
 
-        with patch("routes.analytics.supabase", mock_sb):
+        with patch("routes.analytics.supabase", mock_sb), \
+             patch("routes.analytics.data_cache") as mock_cache:
+            mock_cache.get_or_fetch_async = AsyncMock(side_effect=lambda prefix, fetch_fn, **kw: fetch_fn())
+
             result = await get_menu_engineering(
                 user=mock_user,
                 tenant_id=None,

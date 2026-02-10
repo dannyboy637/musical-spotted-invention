@@ -2,8 +2,10 @@
 Caching utilities for API performance optimization.
 Provides TTL-based in-memory caching for database query results.
 """
+import asyncio
 import hashlib
 import json
+import threading
 from typing import TypeVar, Callable, Any, Optional
 
 from cachetools import TTLCache
@@ -38,6 +40,7 @@ class DataCache:
         self._short = TTLCache(maxsize=500, ttl=30)     # 30 seconds
         self._medium = TTLCache(maxsize=500, ttl=120)   # 2 minutes
         self._long = TTLCache(maxsize=500, ttl=300)     # 5 minutes
+        self._lock = threading.Lock()
 
     def _make_key(self, prefix: str, **kwargs) -> str:
         """Generate cache key from prefix and keyword arguments."""
@@ -70,7 +73,8 @@ class DataCache:
         """
         cache = self._get_cache(ttl)
         key = self._make_key(prefix, **key_params)
-        return cache.get(key)
+        with self._lock:
+            return cache.get(key)
 
     def set(self, value: Any, prefix: str, ttl: str = "medium", **key_params) -> None:
         """
@@ -84,7 +88,8 @@ class DataCache:
         """
         cache = self._get_cache(ttl)
         key = self._make_key(prefix, **key_params)
-        cache[key] = value
+        with self._lock:
+            cache[key] = value
 
     def get_or_fetch(
         self,
@@ -108,13 +113,50 @@ class DataCache:
         cache = self._get_cache(ttl)
         key = self._make_key(prefix, **key_params)
 
-        # Cache hit
-        if key in cache:
-            return cache[key]
+        with self._lock:
+            # Cache hit
+            if key in cache:
+                return cache[key]
 
-        # Cache miss - fetch and store
+        # Cache miss - fetch and store (outside lock to avoid blocking)
         result = fetch_fn()
-        cache[key] = result
+        with self._lock:
+            cache[key] = result
+        return result
+
+    async def get_or_fetch_async(
+        self,
+        prefix: str,
+        fetch_fn: Callable[[], T],
+        ttl: str = "medium",
+        **key_params
+    ) -> T:
+        """
+        Async version of get_or_fetch. Checks cache under lock, and on miss
+        offloads the sync fetch_fn to a worker thread via asyncio.to_thread,
+        then stores the result under lock.
+
+        Args:
+            prefix: Cache key prefix (e.g., "branches", "settings")
+            fetch_fn: Sync function to call if cache miss (runs in worker thread)
+            ttl: "short" (30s), "medium" (2min), or "long" (5min)
+            **key_params: Parameters to include in cache key
+
+        Returns:
+            Cached or freshly fetched value
+        """
+        cache = self._get_cache(ttl)
+        key = self._make_key(prefix, **key_params)
+
+        with self._lock:
+            # Cache hit
+            if key in cache:
+                return cache[key]
+
+        # Cache miss - offload sync fetch_fn to worker thread
+        result = await asyncio.to_thread(fetch_fn)
+        with self._lock:
+            cache[key] = result
         return result
 
     def invalidate(self, prefix: str, **key_params) -> None:
@@ -126,9 +168,10 @@ class DataCache:
             **key_params: Parameters used in the original cache key
         """
         key = self._make_key(prefix, **key_params)
-        for cache in [self._short, self._medium, self._long]:
-            if key in cache:
-                del cache[key]
+        with self._lock:
+            for cache in [self._short, self._medium, self._long]:
+                if key in cache:
+                    del cache[key]
 
     def invalidate_prefix(self, prefix: str) -> None:
         """
@@ -138,10 +181,11 @@ class DataCache:
         Args:
             prefix: Cache key prefix to invalidate
         """
-        for cache in [self._short, self._medium, self._long]:
-            keys_to_delete = [k for k in cache.keys() if k.startswith(f"{prefix}:") or k == prefix]
-            for key in keys_to_delete:
-                del cache[key]
+        with self._lock:
+            for cache in [self._short, self._medium, self._long]:
+                keys_to_delete = [k for k in cache.keys() if k.startswith(f"{prefix}:") or k == prefix]
+                for key in keys_to_delete:
+                    del cache[key]
 
     def invalidate_tenant(self, tenant_id: str) -> None:
         """
@@ -155,10 +199,14 @@ class DataCache:
         # Clear all tenant-scoped caches for safety
         for prefix in [
             "branches", "categories",
-            "analytics_overview", "analytics_dayparting", "analytics_heatmap",
+            "analytics_overview", "analytics_overview_prev",
+            "analytics_dayparting", "analytics_heatmap",
             "analytics_categories", "analytics_category_items",
             "analytics_category_by_branch", "analytics_bundles",
             "analytics_performance", "analytics_trends", "analytics_branches",
+            "analytics_unique_items", "analytics_menu_engineering",
+            "analytics_quadrant_timeline", "analytics_item_history",
+            "analytics_day_breakdown",
             "exclusions_list", "excluded_item_names", "exclusion_suggestions",
             "alerts_list", "alert_settings",
         ]:
@@ -166,9 +214,10 @@ class DataCache:
 
     def invalidate_all(self) -> None:
         """Clear all caches. Use sparingly."""
-        self._short.clear()
-        self._medium.clear()
-        self._long.clear()
+        with self._lock:
+            self._short.clear()
+            self._medium.clear()
+            self._long.clear()
 
     @property
     def stats(self) -> dict:

@@ -2,6 +2,7 @@
 Analytics API routes.
 Provides dashboard data endpoints for menu engineering, dayparting, and performance analytics.
 """
+import asyncio
 from typing import Optional, List
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -38,6 +39,52 @@ def parse_filters(
         end_date=end_date,
         branches=branches.split(",") if branches else None,
         categories=categories.split(",") if categories else None,
+    )
+
+
+async def _cached_trends(effective_tenant_id: str, filters: AnalyticsFilters) -> dict:
+    """Shared cached helper for get_analytics_trends_v2 RPC."""
+    def fetch():
+        return supabase.rpc("get_analytics_trends_v2", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+        }).execute().data or {}
+    return await data_cache.get_or_fetch_async(
+        prefix="analytics_trends",
+        fetch_fn=fetch,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+    )
+
+
+async def _cached_quadrants(effective_tenant_id: str, filters: AnalyticsFilters, item_name: str = None) -> list:
+    """Shared cached helper for get_item_monthly_quadrants_v1 RPC."""
+    def fetch():
+        return supabase.rpc("get_item_monthly_quadrants_v1", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+            "p_item_name": item_name,
+        }).execute().data or []
+    return await data_cache.get_or_fetch_async(
+        prefix="analytics_quadrant_timeline" if item_name is None else "analytics_item_history",
+        fetch_fn=fetch,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+        item_name=item_name,
     )
 
 
@@ -388,28 +435,81 @@ async def get_overview(
             "p_categories": filters.categories,
         }).execute().data or {}
 
-    data = data_cache.get_or_fetch(
-        prefix="analytics_overview",
-        fetch_fn=fetch_overview,
-        ttl="short",
-        tenant_id=effective_tenant_id,
-        start_date=filters.start_date,
-        end_date=filters.end_date,
-        branches=str(filters.branches),
-        categories=str(filters.categories),
-    )
-
-    # Get unique_items from transactions within the filtered date range
-    unique_items = 0
-    try:
-        unique_result = supabase.rpc("get_analytics_unique_items_v2", {
+    def fetch_unique_items():
+        result = supabase.rpc("get_analytics_unique_items_v2", {
             "p_tenant_id": effective_tenant_id,
             "p_start_date": filters.start_date,
             "p_end_date": filters.end_date,
             "p_branches": filters.branches,
             "p_categories": filters.categories,
         }).execute()
-        unique_data = unique_result.data
+        return result.data
+
+    async def _get_overview():
+        return await data_cache.get_or_fetch_async(
+            prefix="analytics_overview",
+            fetch_fn=fetch_overview,
+            ttl="short",
+            tenant_id=effective_tenant_id,
+            start_date=filters.start_date,
+            end_date=filters.end_date,
+            branches=str(filters.branches),
+            categories=str(filters.categories),
+        )
+
+    async def _get_unique_items():
+        return await data_cache.get_or_fetch_async(
+            prefix="analytics_unique_items",
+            fetch_fn=fetch_unique_items,
+            ttl="short",
+            tenant_id=effective_tenant_id,
+            start_date=filters.start_date,
+            end_date=filters.end_date,
+            branches=str(filters.branches),
+            categories=str(filters.categories),
+        )
+
+    async def _get_prev_period():
+        if not (filters.start_date and filters.end_date):
+            return None
+        try:
+            start = datetime.fromisoformat(filters.start_date.replace("Z", ""))
+            end = datetime.fromisoformat(filters.end_date.replace("Z", ""))
+            period_days = (end - start).days + 1
+            prev_end = start - timedelta(days=1)
+            prev_start = prev_end - timedelta(days=period_days - 1)
+
+            def fetch_prev():
+                return supabase.rpc("get_analytics_overview_v2", {
+                    "p_tenant_id": effective_tenant_id,
+                    "p_start_date": prev_start.isoformat()[:10],
+                    "p_end_date": prev_end.isoformat()[:10],
+                    "p_branches": filters.branches,
+                    "p_categories": filters.categories,
+                }).execute().data or {}
+
+            return await data_cache.get_or_fetch_async(
+                prefix="analytics_overview_prev",
+                fetch_fn=fetch_prev,
+                ttl="short",
+                tenant_id=effective_tenant_id,
+                start_date=prev_start.isoformat()[:10],
+                end_date=prev_end.isoformat()[:10],
+                branches=str(filters.branches),
+                categories=str(filters.categories),
+            )
+        except Exception:
+            return None
+
+    # Run all 3 concurrently
+    data, unique_raw, prev_data = await asyncio.gather(
+        _get_overview(), _get_unique_items(), _get_prev_period()
+    )
+
+    # Parse unique_items (keep existing isinstance logic)
+    unique_items = 0
+    try:
+        unique_data = unique_raw
         if isinstance(unique_data, int):
             unique_items = unique_data
         elif isinstance(unique_data, list) and unique_data:
@@ -420,42 +520,25 @@ async def get_overview(
         elif isinstance(unique_data, dict):
             unique_items = unique_data.get("unique_items", 0) or 0
     except Exception:
-        pass  # Fall back to 0 on error
+        pass
 
-    # Calculate growth vs previous period if date range provided
+    # Calculate growth from prev_data
     period_growth = None
-    if filters.start_date and filters.end_date:
+    if prev_data is not None:
         try:
-            start = datetime.fromisoformat(filters.start_date.replace("Z", ""))
-            end = datetime.fromisoformat(filters.end_date.replace("Z", ""))
-            period_days = (end - start).days + 1
-
-            prev_end = start - timedelta(days=1)
-            prev_start = prev_end - timedelta(days=period_days - 1)
-
-            prev_result = supabase.rpc("get_analytics_overview_v2", {
-                "p_tenant_id": effective_tenant_id,
-                "p_start_date": prev_start.isoformat()[:10],
-                "p_end_date": prev_end.isoformat()[:10],
-                "p_branches": filters.branches,
-                "p_categories": filters.categories,
-            }).execute()
-
-            prev_data = prev_result.data or {}
             prev_revenue = prev_data.get("total_revenue", 0)
             current_revenue = data.get("total_revenue", 0)
-
             if prev_revenue > 0:
                 period_growth = round(((current_revenue - prev_revenue) / prev_revenue) * 100, 1)
         except Exception:
-            pass  # Silently skip growth calculation on error
+            pass
 
     return OverviewResponse(
         total_revenue=data.get("total_revenue", 0),
         total_transactions=data.get("total_transactions", 0),
         unique_receipts=data.get("unique_receipts", 0),
         avg_ticket=data.get("avg_ticket", 0),
-        unique_items=unique_items,  # From menu_items table, not summary
+        unique_items=unique_items,
         period_growth=period_growth,
         filters_applied=filters.model_dump(exclude_none=True),
         generated_at=datetime.utcnow().isoformat(),
@@ -523,21 +606,38 @@ async def get_menu_engineering(
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    result = supabase.rpc("get_item_totals_v2", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-        "p_macro_category": macro_category,
-        "p_core_only": core_only,
-        "p_current_only": current_only,
-        "p_min_price": min_price,
-        "p_max_price": max_price,
-        "p_min_quantity": min_quantity,
-        "p_exclude_excluded": True,
-    }).execute()
-    data = result.data or []
+    def fetch_menu_engineering():
+        return supabase.rpc("get_item_totals_v2", {
+            "p_tenant_id": effective_tenant_id,
+            "p_start_date": filters.start_date,
+            "p_end_date": filters.end_date,
+            "p_branches": filters.branches,
+            "p_categories": filters.categories,
+            "p_macro_category": macro_category,
+            "p_core_only": core_only,
+            "p_current_only": current_only,
+            "p_min_price": min_price,
+            "p_max_price": max_price,
+            "p_min_quantity": min_quantity,
+            "p_exclude_excluded": True,
+        }).execute().data or []
+
+    data = await data_cache.get_or_fetch_async(
+        prefix="analytics_menu_engineering",
+        fetch_fn=fetch_menu_engineering,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        start_date=filters.start_date,
+        end_date=filters.end_date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+        macro_category=macro_category,
+        core_only=core_only,
+        current_only=current_only,
+        min_price=min_price,
+        max_price=max_price,
+        min_quantity=min_quantity,
+    )
 
     if not data:
         return MenuEngineeringResponse(
@@ -734,7 +834,7 @@ async def get_dayparting(
             "p_categories": filters.categories,
         }).execute().data or {}
 
-    data = data_cache.get_or_fetch(
+    data = await data_cache.get_or_fetch_async(
         prefix="analytics_dayparting",
         fetch_fn=fetch_dayparting,
         ttl="short",
@@ -799,7 +899,7 @@ async def get_hourly_heatmap(
         }).execute().data or {}
         return result.get("data", []) if isinstance(result, dict) else []
 
-    raw_data = data_cache.get_or_fetch(
+    raw_data = await data_cache.get_or_fetch_async(
         prefix="analytics_heatmap",
         fetch_fn=fetch_heatmap,
         ttl="short",
@@ -880,7 +980,7 @@ async def get_categories(
             "p_branches": filters.branches,
         }).execute().data or {}
 
-    data = data_cache.get_or_fetch(
+    data = await data_cache.get_or_fetch_async(
         prefix="analytics_categories",
         fetch_fn=fetch_categories,
         ttl="short",
@@ -974,7 +1074,7 @@ async def get_category_items(
             "max_rows": None,
         }
 
-    data = data_cache.get_or_fetch(
+    data = await data_cache.get_or_fetch_async(
         prefix="analytics_category_items",
         fetch_fn=fetch_category_items,
         ttl="short",
@@ -1039,7 +1139,7 @@ async def get_category_by_branch(
             "max_rows": None,
         }
 
-    data = data_cache.get_or_fetch(
+    data = await data_cache.get_or_fetch_async(
         prefix="analytics_category_by_branch",
         fetch_fn=fetch_category_by_branch,
         ttl="short",
@@ -1098,7 +1198,7 @@ async def get_bundles(
             "p_limit": limit,
         }).execute().data or {}
 
-    data = data_cache.get_or_fetch(
+    data = await data_cache.get_or_fetch_async(
         prefix="analytics_bundles",
         fetch_fn=fetch_bundles,
         ttl="short",
@@ -1163,7 +1263,7 @@ async def get_performance(
             "p_categories": filters.categories,
         }).execute().data or {}
 
-    data = data_cache.get_or_fetch(
+    data = await data_cache.get_or_fetch_async(
         prefix="analytics_performance",
         fetch_fn=fetch_performance,
         ttl="short",
@@ -1202,25 +1302,7 @@ async def get_performance_trends(
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    def fetch_trends():
-        return supabase.rpc("get_analytics_trends_v2", {
-            "p_tenant_id": effective_tenant_id,
-            "p_start_date": filters.start_date,
-            "p_end_date": filters.end_date,
-            "p_branches": filters.branches,
-            "p_categories": filters.categories,
-        }).execute().data or {}
-
-    data = data_cache.get_or_fetch(
-        prefix="analytics_trends",
-        fetch_fn=fetch_trends,
-        ttl="short",
-        tenant_id=effective_tenant_id,
-        start_date=filters.start_date,
-        end_date=filters.end_date,
-        branches=str(filters.branches),
-        categories=str(filters.categories),
-    )
+    data = await _cached_trends(effective_tenant_id, filters)
 
     daily_list = data.get("daily") or []
     weekly_list = data.get("weekly") or []
@@ -1276,7 +1358,7 @@ async def get_daily_breakdown(
             "p_categories": filters.categories,
         }).execute().data or []
 
-    data = data_cache.get_or_fetch(
+    data = await data_cache.get_or_fetch_async(
         prefix="analytics_daily_breakdown",
         fetch_fn=fetch_breakdown,
         ttl="short",
@@ -1332,7 +1414,7 @@ async def get_performance_branches(
             "p_categories": filters.categories,
         }).execute().data or {}
 
-    data = data_cache.get_or_fetch(
+    data = await data_cache.get_or_fetch_async(
         prefix="analytics_branches",
         fetch_fn=fetch_branches,
         ttl="short",
@@ -1380,15 +1462,7 @@ async def get_day_of_week(
 
     # Fetch daily aggregated data using the trends endpoint data
     # We need date-level data to calculate day-of-week averages
-    result = supabase.rpc("get_analytics_trends_v2", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
-
-    data = result.data or {}
+    data = await _cached_trends(effective_tenant_id, filters)
     daily_list = data.get("daily") or []
 
     # Group by day of week
@@ -1502,15 +1576,7 @@ async def get_year_over_year(
     filters = parse_filters(None, None, branches, categories)
 
     # Get monthly data without date filtering to see all available data
-    result = supabase.rpc("get_analytics_trends_v2", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": None,
-        "p_end_date": None,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
-
-    data = result.data or {}
+    data = await _cached_trends(effective_tenant_id, filters)
     monthly_list = data.get("monthly") or []
 
     # Filter to only the target month and collect by year
@@ -1687,16 +1753,7 @@ async def get_quadrant_timeline(
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(start_date, end_date, branches, categories)
 
-    result = supabase.rpc("get_item_monthly_quadrants_v1", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": filters.start_date,
-        "p_end_date": filters.end_date,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-        "p_item_name": item_name,
-    }).execute()
-
-    rows = result.data or []
+    rows = await _cached_quadrants(effective_tenant_id, filters, item_name)
 
     if not rows:
         return QuadrantTimelineResponse(
@@ -1806,15 +1863,7 @@ async def get_yoy_summary(
     filters = parse_filters(None, None, branches, categories)
 
     # Get all monthly data
-    result = supabase.rpc("get_analytics_trends_v2", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": None,
-        "p_end_date": None,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
-
-    data = result.data or {}
+    data = await _cached_trends(effective_tenant_id, filters)
     monthly_list = data.get("monthly") or []
 
     # Group by year and month
@@ -1922,15 +1971,7 @@ async def get_seasonal_trends(
     filters = parse_filters(None, None, branches, categories)
 
     # Get all monthly data
-    result = supabase.rpc("get_analytics_trends_v2", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": None,
-        "p_end_date": None,
-        "p_branches": filters.branches,
-        "p_categories": filters.categories,
-    }).execute()
-
-    data = result.data or {}
+    data = await _cached_trends(effective_tenant_id, filters)
     monthly_list = data.get("monthly") or []
 
     # Group by month (across all years)
@@ -2012,16 +2053,7 @@ async def get_item_history(
     effective_tenant_id = get_effective_tenant_id(user, tenant_id)
     filters = parse_filters(None, None, branches, None)
 
-    result = supabase.rpc("get_item_monthly_quadrants_v1", {
-        "p_tenant_id": effective_tenant_id,
-        "p_start_date": None,
-        "p_end_date": None,
-        "p_branches": filters.branches,
-        "p_categories": None,
-        "p_item_name": item_name,
-    }).execute()
-
-    rows = result.data or []
+    rows = await _cached_quadrants(effective_tenant_id, filters, item_name)
     if not rows:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -2085,25 +2117,116 @@ async def get_day_breakdown(
     # Parse the date
     try:
         target_date = datetime.fromisoformat(date)
-        day_name = target_date.strftime("%A")  # "Monday", etc.
+        day_name = target_date.strftime("%A")
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid date format: {date}. Use YYYY-MM-DD."
         )
 
-    # Query hourly_summaries for this date
-    hourly_query = supabase.table("hourly_summaries").select(
-        "local_hour, revenue, quantity, transaction_count"
-    ).eq("tenant_id", effective_tenant_id).eq("sale_date", date)
+    def fetch_day_data():
+        # Query hourly_summaries for this date
+        hourly_query = supabase.table("hourly_summaries").select(
+            "local_hour, revenue, quantity, transaction_count"
+        ).eq("tenant_id", effective_tenant_id).eq("sale_date", date)
 
-    if filters.branches:
-        hourly_query = hourly_query.in_("store_name", filters.branches)
-    if filters.categories:
-        hourly_query = hourly_query.in_("category", filters.categories)
+        if filters.branches:
+            hourly_query = hourly_query.in_("store_name", filters.branches)
+        if filters.categories:
+            hourly_query = hourly_query.in_("category", filters.categories)
 
-    hourly_result = hourly_query.execute()
-    hourly_data = hourly_result.data or []
+        hourly_result = hourly_query.execute()
+        hourly_data = hourly_result.data or []
+
+        # Get item data
+        item_totals = {}
+        if filters.categories:
+            item_result = supabase.rpc("get_item_totals_v2", {
+                "p_tenant_id": effective_tenant_id,
+                "p_start_date": date,
+                "p_end_date": date,
+                "p_branches": filters.branches,
+                "p_categories": filters.categories,
+                "p_exclude_excluded": True,
+            }).execute()
+
+            for row in item_result.data or []:
+                name = row.get("item_name", "Unknown")
+                item_totals[name] = {
+                    "quantity": int(row.get("total_quantity", 0) or 0),
+                    "revenue": int(row.get("total_revenue", 0) or 0),
+                }
+        else:
+            branch_query = supabase.table("branch_summaries").select(
+                "top_items"
+            ).eq("tenant_id", effective_tenant_id).eq(
+                "period_type", "daily"
+            ).eq("period_start", date)
+
+            if filters.branches:
+                branch_query = branch_query.in_("store_name", filters.branches)
+
+            branch_result = branch_query.execute()
+
+            for row in branch_result.data or []:
+                items = row.get("top_items") or []
+                for item in items:
+                    name = item.get("item_name", "Unknown")
+                    if name not in item_totals:
+                        item_totals[name] = {"quantity": 0, "revenue": 0}
+                    item_totals[name]["quantity"] += item.get("quantity", 0) or 0
+                    item_totals[name]["revenue"] += item.get("revenue", 0) or 0
+
+        # Prior week data
+        prior_date = (target_date - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        prior_query = supabase.table("hourly_summaries").select(
+            "revenue, transaction_count"
+        ).eq("tenant_id", effective_tenant_id).eq("sale_date", prior_date)
+
+        if filters.branches:
+            prior_query = prior_query.in_("store_name", filters.branches)
+        if filters.categories:
+            prior_query = prior_query.in_("category", filters.categories)
+
+        prior_result = prior_query.execute()
+        prior_hourly_data = prior_result.data or []
+
+        # Prior week top items for overlap
+        prior_branch = supabase.table("branch_summaries").select(
+            "top_items"
+        ).eq("tenant_id", effective_tenant_id).eq(
+            "period_type", "daily"
+        ).eq("period_start", prior_date)
+
+        if filters.branches:
+            prior_branch = prior_branch.in_("store_name", filters.branches)
+
+        prior_branch_result = prior_branch.execute()
+
+        return {
+            "hourly_data": hourly_data,
+            "item_totals": item_totals,
+            "prior_hourly_data": prior_hourly_data,
+            "prior_branch_data": prior_branch_result.data or [],
+            "prior_date": prior_date,
+        }
+
+    cached = await data_cache.get_or_fetch_async(
+        prefix="analytics_day_breakdown",
+        fetch_fn=fetch_day_data,
+        ttl="short",
+        tenant_id=effective_tenant_id,
+        date=date,
+        branches=str(filters.branches),
+        categories=str(filters.categories),
+    )
+
+    hourly_data = cached["hourly_data"]
+    item_totals = cached["item_totals"]
+    prior_hourly_data = cached["prior_hourly_data"]
+    prior_branch_data = cached["prior_branch_data"]
+    prior_date = cached["prior_date"]
 
     # Aggregate by hour
     hour_totals = {h: {"revenue": 0, "transactions": 0, "quantity": 0} for h in range(24)}
@@ -2131,52 +2254,7 @@ async def get_day_breakdown(
     total_quantity = sum(h.quantity for h in hourly)
     peak_hour = max(hourly, key=lambda h: h.revenue).hour if hourly else 12
 
-    # Get top items for the day.
-    # Use item_totals RPC when category filters are present so top/bottom items
-    # stay consistent with the filtered totals shown above.
-    top_items: List[TopItemData] = []
-    bottom_items: List[TopItemData] = []
-
-    item_totals = {}
-    if filters.categories:
-        item_result = supabase.rpc("get_item_totals_v2", {
-            "p_tenant_id": effective_tenant_id,
-            "p_start_date": date,
-            "p_end_date": date,
-            "p_branches": filters.branches,
-            "p_categories": filters.categories,
-            "p_exclude_excluded": True,
-        }).execute()
-
-        for row in item_result.data or []:
-            name = row.get("item_name", "Unknown")
-            item_totals[name] = {
-                "quantity": int(row.get("total_quantity", 0) or 0),
-                "revenue": int(row.get("total_revenue", 0) or 0),
-            }
-    else:
-        branch_query = supabase.table("branch_summaries").select(
-            "top_items"
-        ).eq("tenant_id", effective_tenant_id).eq(
-            "period_type", "daily"
-        ).eq("period_start", date)
-
-        if filters.branches:
-            branch_query = branch_query.in_("store_name", filters.branches)
-
-        branch_result = branch_query.execute()
-
-        # Aggregate top_items across branches
-        for row in branch_result.data or []:
-            items = row.get("top_items") or []
-            for item in items:
-                name = item.get("item_name", "Unknown")
-                if name not in item_totals:
-                    item_totals[name] = {"quantity": 0, "revenue": 0}
-                item_totals[name]["quantity"] += item.get("quantity", 0) or 0
-                item_totals[name]["revenue"] += item.get("revenue", 0) or 0
-
-    # Sort and get top/bottom 10
+    # Sort and get top/bottom 10 items
     sorted_items = sorted(
         item_totals.items(),
         key=lambda x: x[1]["revenue"],
@@ -2188,14 +2266,12 @@ async def get_day_breakdown(
         for name, data in sorted_items[:10]
     ]
 
-    # Bottom 10 - take from the end, reverse to show lowest first
     if len(sorted_items) > 10:
         bottom_items = [
             TopItemData(item_name=name, quantity=data["quantity"], revenue=data["revenue"])
             for name, data in sorted_items[-10:][::-1]
         ]
     else:
-        # If less than 20 items total, just take what's left after top 10
         bottom_items = [
             TopItemData(item_name=name, quantity=data["quantity"], revenue=data["revenue"])
             for name, data in sorted_items[10:][::-1]
@@ -2203,23 +2279,9 @@ async def get_day_breakdown(
 
     # Week-over-week comparison
     comparison = None
-    prior_date = (target_date - timedelta(days=7)).strftime("%Y-%m-%d")
-
-    prior_query = supabase.table("hourly_summaries").select(
-        "revenue, transaction_count"
-    ).eq("tenant_id", effective_tenant_id).eq("sale_date", prior_date)
-
-    if filters.branches:
-        prior_query = prior_query.in_("store_name", filters.branches)
-    if filters.categories:
-        prior_query = prior_query.in_("category", filters.categories)
-
-    prior_result = prior_query.execute()
-    prior_data = prior_result.data or []
-
-    if prior_data:
-        prior_revenue = sum(r.get("revenue", 0) or 0 for r in prior_data)
-        prior_transactions = sum(r.get("transaction_count", 0) or 0 for r in prior_data)
+    if prior_hourly_data:
+        prior_revenue = sum(r.get("revenue", 0) or 0 for r in prior_hourly_data)
+        prior_transactions = sum(r.get("transaction_count", 0) or 0 for r in prior_hourly_data)
 
         revenue_change = None
         transactions_change = None
@@ -2233,20 +2295,8 @@ async def get_day_breakdown(
                 ((total_transactions - prior_transactions) / prior_transactions) * 100, 1
             )
 
-        # Get prior week's top items for overlap calculation
-        prior_branch = supabase.table("branch_summaries").select(
-            "top_items"
-        ).eq("tenant_id", effective_tenant_id).eq(
-            "period_type", "daily"
-        ).eq("period_start", prior_date)
-
-        if filters.branches:
-            prior_branch = prior_branch.in_("store_name", filters.branches)
-
-        prior_branch_result = prior_branch.execute()
-
         prior_top_names = set()
-        for row in prior_branch_result.data or []:
+        for row in prior_branch_data:
             for item in row.get("top_items") or []:
                 prior_top_names.add(item.get("item_name"))
 
