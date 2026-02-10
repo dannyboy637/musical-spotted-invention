@@ -151,6 +151,7 @@ BEGIN
       COALESCE(SUM(gross_revenue), 0) as total_revenue
     FROM transactions
     WHERE tenant_id = p_tenant_id
+      AND (is_excluded = FALSE OR is_excluded IS NULL)
       AND (p_start_date IS NULL OR receipt_timestamp::date >= p_start_date)
       AND (p_end_date IS NULL OR receipt_timestamp::date <= p_end_date)
     GROUP BY store_name
@@ -165,6 +166,7 @@ BEGIN
     FROM transactions
     WHERE tenant_id = p_tenant_id
       AND category = p_category
+      AND (is_excluded = FALSE OR is_excluded IS NULL)
       AND (p_start_date IS NULL OR receipt_timestamp::date >= p_start_date)
       AND (p_end_date IS NULL OR receipt_timestamp::date <= p_end_date)
     GROUP BY store_name, item_name
@@ -203,7 +205,11 @@ BEGIN
 END;
 $$;
 
--- Grant execute permissions
-GRANT EXECUTE ON FUNCTION get_report_top_items TO authenticated;
-GRANT EXECUTE ON FUNCTION get_report_movers TO authenticated;
-GRANT EXECUTE ON FUNCTION get_category_by_branch_agg TO authenticated;
+-- Grant execute only to service_role (backend calls these, not the frontend)
+GRANT EXECUTE ON FUNCTION get_report_top_items TO service_role;
+GRANT EXECUTE ON FUNCTION get_report_movers TO service_role;
+GRANT EXECUTE ON FUNCTION get_category_by_branch_agg TO service_role;
+-- Revoke from authenticated to prevent direct PostgREST access
+REVOKE EXECUTE ON FUNCTION get_report_top_items FROM authenticated;
+REVOKE EXECUTE ON FUNCTION get_report_movers FROM authenticated;
+REVOKE EXECUTE ON FUNCTION get_category_by_branch_agg FROM authenticated;

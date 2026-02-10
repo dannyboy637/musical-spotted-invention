@@ -10,7 +10,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.get("/me")
-@limiter.limit("10/minute")
+@limiter.limit("60/minute")
 async def get_current_user_info(request: Request, user: UserPayload = Depends(get_current_user)):
     """
     Get the current authenticated user's information.

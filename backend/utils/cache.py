@@ -154,7 +154,11 @@ class DataCache:
         # Since tenant_id is hashed into the key, we need to clear broadly
         # Clear all tenant-scoped caches for safety
         for prefix in [
-            "branches", "categories", "analytics",
+            "branches", "categories",
+            "analytics_overview", "analytics_dayparting", "analytics_heatmap",
+            "analytics_categories", "analytics_category_items",
+            "analytics_category_by_branch", "analytics_bundles",
+            "analytics_performance", "analytics_trends", "analytics_branches",
             "exclusions_list", "excluded_item_names", "exclusion_suggestions",
             "alerts_list", "alert_settings",
         ]:
