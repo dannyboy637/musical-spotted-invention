@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Settings, TrendingUp, Scissors, Package, AlertCircle, RefreshCw } from 'lucide-react'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { useFilterStore } from '../../stores/filterStore'
@@ -97,7 +98,7 @@ export function RecommendationsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="recommendations-export" className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-navy-900">Recommendations</h1>
@@ -105,13 +106,16 @@ export function RecommendationsPage() {
             Strategic insights for menu optimization - {currentTenant.name}
           </p>
         </div>
-        <button
-          onClick={() => setShowSettings(true)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-        >
-          <Settings className="w-4 h-4" />
-          Rule Settings
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportPdfButton title="Recommendations" targetId="recommendations-export" />
+          <button
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+            Rule Settings
+          </button>
+        </div>
       </div>
 
       {/* Period and Branch Filters */}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChartContainer } from '../../components/charts/ChartContainer'
 import { LineChart } from '../../components/charts/LineChart'
 import { usePerformanceTrends } from '../../hooks/useAnalytics'
+import { useUIStore } from '../../stores/uiStore'
 import { formatCurrency, chartColors } from '../../lib/chartConfig'
 import { format, parseISO, startOfISOWeek, endOfISOWeek, setISOWeek, setYear } from 'date-fns'
 
@@ -20,6 +21,16 @@ function calculateMovingAverage(data: number[], window: number): (number | null)
 export function TrendCharts() {
   const [granularity, setGranularity] = useState<Granularity>('daily')
   const { data, isLoading, error, refetch } = usePerformanceTrends()
+  const { openDayDeepDive } = useUIStore()
+
+  const handleDataPointClick = (dataPoint: Record<string, string | number>) => {
+    // Only handle clicks on daily granularity (specific dates)
+    if (granularity !== 'daily') return
+    const date = dataPoint.label as string
+    if (date) {
+      openDayDeepDive(date)
+    }
+  }
 
   // Get the appropriate data based on granularity
   const getChartData = () => {
@@ -172,6 +183,7 @@ export function TrendCharts() {
           height={300}
           showGrid
           showLegend={granularity !== 'monthly'}
+          onDataPointClick={granularity === 'daily' ? handleDataPointClick : undefined}
         />
       </div>
     </ChartContainer>

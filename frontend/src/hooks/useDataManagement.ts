@@ -54,6 +54,31 @@ export interface DataHealthResponse {
   issues?: string[]
 }
 
+export interface ItemExclusion {
+  id: string
+  item_name: string
+  reason: string | null
+  created_at: string
+  created_by: string | null
+}
+
+export interface ItemExclusionSuggestion {
+  item_name: string
+  total_quantity: number
+  total_revenue: number
+  order_count: number
+  first_sale_date: string | null
+  last_sale_date: string | null
+}
+
+export interface ItemExclusionSuggestionsResponse {
+  suggestions: ItemExclusionSuggestion[]
+  thresholds: {
+    max_quantity?: number | null
+    max_revenue?: number | null
+  }
+}
+
 // Hook to list import jobs
 export function useImportJobs(limit = 20, offset = 0, options?: { pollingWhileProcessing?: boolean }) {
   const { session } = useAuthStore()
@@ -176,6 +201,79 @@ export function useDataHealth() {
   })
 }
 
+// Hook to list item exclusions
+export function useItemExclusions() {
+  const { session, profile } = useAuthStore()
+  const { activeTenant } = useTenantStore()
+
+  return useQuery<ItemExclusion[]>({
+    queryKey: ['item-exclusions', activeTenant?.id],
+    queryFn: async () => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const params: Record<string, string> = {}
+      if (profile?.role === 'operator' && activeTenant?.id) {
+        params.tenant_id = activeTenant.id
+      }
+
+      const response = await axios.get(`${API_URL}/data/item-exclusions`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        params,
+      })
+      return response.data
+    },
+    enabled: !!session?.access_token && (profile?.role !== 'operator' || !!activeTenant),
+  })
+}
+
+// Hook to fetch exclusion suggestions
+export function useItemExclusionSuggestions(options?: {
+  maxQuantity?: number
+  maxRevenue?: number
+  limit?: number
+}) {
+  const { session, profile } = useAuthStore()
+  const { activeTenant } = useTenantStore()
+
+  return useQuery<ItemExclusionSuggestionsResponse>({
+    queryKey: [
+      'item-exclusion-suggestions',
+      activeTenant?.id,
+      options?.maxQuantity,
+      options?.maxRevenue,
+      options?.limit,
+    ],
+    queryFn: async () => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const params: Record<string, string | number> = {}
+      if (profile?.role === 'operator' && activeTenant?.id) {
+        params.tenant_id = activeTenant.id
+      }
+      if (typeof options?.maxQuantity === 'number') {
+        params.max_quantity = options.maxQuantity
+      }
+      if (typeof options?.maxRevenue === 'number') {
+        params.max_revenue = options.maxRevenue
+      }
+      if (typeof options?.limit === 'number') {
+        params.limit = options.limit
+      }
+
+      const response = await axios.get(`${API_URL}/data/item-exclusions/suggestions`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        params,
+      })
+      return response.data
+    },
+    enabled: !!session?.access_token && (profile?.role !== 'operator' || !!activeTenant),
+  })
+}
+
 // Response type for cancel job
 export interface CancelJobResponse {
   success: boolean
@@ -210,6 +308,74 @@ export function useCancelImportJob() {
       queryClient.invalidateQueries({ queryKey: ['import-job', data.job_id] })
       queryClient.invalidateQueries({ queryKey: ['data-health'] })
       queryClient.invalidateQueries({ queryKey: ['analytics-overview'] })
+    },
+  })
+}
+
+// Hook to add a new item exclusion
+export function useAddItemExclusion() {
+  const { session, profile } = useAuthStore()
+  const { activeTenant } = useTenantStore()
+  const queryClient = useQueryClient()
+
+  return useMutation<ItemExclusion, Error, { item_name: string; reason?: string }>({
+    mutationFn: async (payload) => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const params: Record<string, string> = {}
+      if (profile?.role === 'operator' && activeTenant?.id) {
+        params.tenant_id = activeTenant.id
+      }
+
+      const response = await axios.post(
+        `${API_URL}/data/item-exclusions`,
+        payload,
+        {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          params,
+        }
+      )
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['item-exclusions'] })
+      queryClient.invalidateQueries({ queryKey: ['item-exclusion-suggestions'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-categories'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-menu-engineering'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-category-items'] })
+    },
+  })
+}
+
+// Hook to delete an item exclusion
+export function useDeleteItemExclusion() {
+  const { session } = useAuthStore()
+  const queryClient = useQueryClient()
+
+  return useMutation<{ success: boolean; deleted_id: string }, Error, string>({
+    mutationFn: async (exclusionId: string) => {
+      if (!session?.access_token) {
+        throw new Error('No access token')
+      }
+
+      const response = await axios.delete(
+        `${API_URL}/data/item-exclusions/${exclusionId}`,
+        {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      )
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['item-exclusions'] })
+      queryClient.invalidateQueries({ queryKey: ['item-exclusion-suggestions'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-categories'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-menu-engineering'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics-category-items'] })
     },
   })
 }

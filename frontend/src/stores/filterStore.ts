@@ -72,8 +72,10 @@ export function filtersToSearchParams(state: Pick<FilterState, 'dateRange' | 'br
   const params = new URLSearchParams()
 
   if (state.dateRange) {
-    params.set('start', state.dateRange.start.toISOString().split('T')[0])
-    params.set('end', state.dateRange.end.toISOString().split('T')[0])
+    const formatLocal = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    params.set('start', formatLocal(state.dateRange.start))
+    params.set('end', formatLocal(state.dateRange.end))
   }
 
   if (state.branches.length > 0) {

@@ -19,6 +19,7 @@ os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-jwt-secret")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:5173")
 os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("SKIP_STARTUP_TASKS", "true")
 
 
 # ---------------------------------------------------------------------------

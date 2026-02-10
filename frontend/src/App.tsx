@@ -26,6 +26,7 @@ const RecommendationsPage = lazy(() => import('./modules/recommendations').then(
 const CostManagementPage = lazy(() => import('./modules/costs').then(m => ({ default: m.CostManagementPage })))
 const DataManagementPage = lazy(() => import('./modules/data-management').then(m => ({ default: m.DataManagementPage })))
 const AlertsPage = lazy(() => import('./modules/alerts').then(m => ({ default: m.AlertsPage })))
+const MovementsPage = lazy(() => import('./modules/movements').then(m => ({ default: m.MovementsPage })))
 const ReportsPage = lazy(() => import('./modules/reports').then(m => ({ default: m.ReportsPage })))
 const ReportPreviewPage = lazy(() => import('./modules/reports').then(m => ({ default: m.ReportPreviewPage })))
 const ExclusionsPage = lazy(() => import('./modules/exclusions').then(m => ({ default: m.ExclusionsPage })))
@@ -73,6 +74,7 @@ function App() {
                 <Route path="categories" element={<Suspense fallback={<PageLoader />}><CategoryPage /></Suspense>} />
                 <Route path="branches" element={<Suspense fallback={<PageLoader />}><BranchComparisonPage /></Suspense>} />
                 <Route path="recommendations" element={<Suspense fallback={<PageLoader />}><RecommendationsPage /></Suspense>} />
+                <Route path="movements" element={<Suspense fallback={<PageLoader />}><MovementsPage /></Suspense>} />
                 <Route path="costs" element={<Suspense fallback={<PageLoader />}><CostManagementPage /></Suspense>} />
                 <Route path="data-management" element={<Suspense fallback={<PageLoader />}><DataManagementPage /></Suspense>} />
                 <Route path="exclusions" element={<Suspense fallback={<PageLoader />}><ExclusionsPage /></Suspense>} />

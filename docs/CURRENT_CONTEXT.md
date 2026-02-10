@@ -73,7 +73,7 @@
   - Migration 038 - Fixed transaction unique constraint
 - **Automation:**
   - cron-job.org triggers daily at 2:00 AM Manila time
-  - Calls `POST /auto-fetch/trigger?token=xxx`
+  - Calls `POST /auto-fetch/trigger` with `Authorization: Bearer <token>` (or `X-Auto-Fetch-Token`)
   - Runs in background, handles duplicates automatically
 - **Environment Variables:** `STOREHUB_SUBDOMAIN`, `STOREHUB_USERNAME`, `STOREHUB_PASSWORD`, `TARGET_TENANT_ID`, `AUTO_FETCH_SECRET`
 
@@ -111,7 +111,7 @@
   - 30s statement timeout per function
   - Supabase client timeout: 120s (was ~10s default)
 - **Simplifications:**
-  - Removed theme toggle (dark/system modes) - light theme only
+  - Theme toggle retained (light/dark/system supported via settings store)
 - **Validation Results:**
   - All dashboard modules working
   - Data isolation verified (no cross-tenant leakage)
@@ -182,7 +182,7 @@
   - `POST /api/reports/{id}/approve` - Mark as approved
   - `POST /api/reports/{id}/send` - Send email (subject reflects period type)
   - `DELETE /api/reports/{id}` - Delete pending/approved reports
-- Frontend: Report Center (`/reports`) - Operator only
+- Frontend: Report Center (`/reports`) - Operator and owner
   - Reports list with status and period type badges
   - Generate single report with period dropdown (Week/Month/Quarter/Year)
   - Generate all (weekly only)
@@ -391,7 +391,7 @@ frontend/src/
 │   ├── costs/                   # Cost input, margin calculations
 │   ├── data-management/         # Import, transactions view
 │   ├── alerts/                  # Alerts list page
-│   └── reports/                 # Report Center, Report Preview (operator only)
+│   └── reports/                 # Report Center, Report Preview (operator + owner)
 ├── components/
 │   ├── layout/                  # AppShell, Sidebar, Header, GlobalFilters
 │   ├── ui/                      # Spinner, DateRangePicker, MultiSelect, etc.

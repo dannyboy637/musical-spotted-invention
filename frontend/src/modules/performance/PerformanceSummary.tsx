@@ -1,11 +1,13 @@
 import { Calendar } from 'lucide-react'
 import { StatCard } from '../../components/ui/StatCard'
 import { usePerformance } from '../../hooks/useAnalytics'
+import { useUIStore } from '../../stores/uiStore'
 import { formatCurrency, formatCurrencyFull } from '../../lib/chartConfig'
 import { format, parseISO, differenceInDays } from 'date-fns'
 
 export function PerformanceSummary() {
   const { data, isLoading } = usePerformance()
+  const { openDayDeepDive } = useUIStore()
 
   const formatDate = (dateStr: string) => {
     try {
@@ -51,6 +53,7 @@ export function PerformanceSummary() {
           sublabel={data?.trends.best_day ? formatCurrency(data.trends.best_day.revenue) : undefined}
           color="success"
           loading={isLoading}
+          onClick={data?.trends.best_day ? () => openDayDeepDive(data.trends.best_day.date) : undefined}
         />
         <StatCard
           label="Worst Day"
@@ -59,6 +62,7 @@ export function PerformanceSummary() {
           note={isWorstDayRecent() ? 'May have incomplete data' : undefined}
           color="warning"
           loading={isLoading}
+          onClick={data?.trends.worst_day ? () => openDayDeepDive(data.trends.worst_day.date) : undefined}
         />
       </div>
     </div>

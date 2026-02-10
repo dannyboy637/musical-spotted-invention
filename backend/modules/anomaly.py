@@ -218,35 +218,29 @@ def detect_item_anomalies(tenant_id: str, settings: Dict) -> int:
     prior_end = current_start - timedelta(days=1)
     prior_start = prior_end - timedelta(days=6)
 
-    # Get item quantities for current period
-    current_result = supabase.table("transactions") \
-        .select("item_name") \
-        .eq("tenant_id", tenant_id) \
-        .eq("is_excluded", False) \
-        .gte("receipt_timestamp", current_start.isoformat()) \
-        .lte("receipt_timestamp", f"{current_end.isoformat()}T23:59:59") \
-        .execute()
+    # Get item quantities for current period via RPC (SQL-side aggregation)
+    current_result = supabase.rpc("get_item_totals_v2", {
+        "p_tenant_id": tenant_id,
+        "p_start_date": current_start.isoformat(),
+        "p_end_date": current_end.isoformat(),
+        "p_exclude_excluded": True,
+    }).execute()
 
-    # Count items in current period
     current_counts: Dict[str, int] = {}
     for row in (current_result.data or []):
-        item = row.get("item_name", "Unknown")
-        current_counts[item] = current_counts.get(item, 0) + 1
+        current_counts[row.get("item_name", "Unknown")] = row.get("total_quantity", 0) or 0
 
-    # Get item quantities for prior period
-    prior_result = supabase.table("transactions") \
-        .select("item_name") \
-        .eq("tenant_id", tenant_id) \
-        .eq("is_excluded", False) \
-        .gte("receipt_timestamp", prior_start.isoformat()) \
-        .lte("receipt_timestamp", f"{prior_end.isoformat()}T23:59:59") \
-        .execute()
+    # Get item quantities for prior period via RPC
+    prior_result = supabase.rpc("get_item_totals_v2", {
+        "p_tenant_id": tenant_id,
+        "p_start_date": prior_start.isoformat(),
+        "p_end_date": prior_end.isoformat(),
+        "p_exclude_excluded": True,
+    }).execute()
 
-    # Count items in prior period
     prior_counts: Dict[str, int] = {}
     for row in (prior_result.data or []):
-        item = row.get("item_name", "Unknown")
-        prior_counts[item] = prior_counts.get(item, 0) + 1
+        prior_counts[row.get("item_name", "Unknown")] = row.get("total_quantity", 0) or 0
 
     # Compare all items
     all_items = set(current_counts.keys()) | set(prior_counts.keys())
@@ -322,40 +316,34 @@ def get_quadrant_for_period(
 
     Returns dict mapping item_name -> quadrant.
     """
-    # Calculate date range for the month
+    from calendar import monthrange
+
+    # Calculate date range for the month (inclusive end date for RPC)
     start_date = f"{year}-{month:02d}-01"
-    if month == 12:
-        end_date = f"{year + 1}-01-01"
-    else:
-        end_date = f"{year}-{month + 1:02d}-01"
+    _, last_day = monthrange(year, month)
+    end_date = f"{year}-{month:02d}-{last_day:02d}"
 
-    # Get transaction data for quadrant calculation
-    result = supabase.table("transactions") \
-        .select("item_name, gross_revenue, is_excluded") \
-        .eq("tenant_id", tenant_id) \
-        .eq("is_excluded", False) \
-        .gte("receipt_timestamp", start_date) \
-        .lt("receipt_timestamp", end_date) \
-        .execute()
+    # Get item data via RPC (SQL-side aggregation)
+    result = supabase.rpc("get_item_totals_v2", {
+        "p_tenant_id": tenant_id,
+        "p_start_date": start_date,
+        "p_end_date": end_date,
+        "p_exclude_excluded": True,
+    }).execute()
 
-    if not result.data:
+    items_data = result.data or []
+    if not items_data:
         return {}
 
-    # Aggregate by item
+    # Build item_data from RPC results
     item_data: Dict[str, Dict] = {}
-    for row in result.data:
+    for row in items_data:
         item_name = row.get("item_name", "Unknown")
-        if item_name not in item_data:
-            item_data[item_name] = {"quantity": 0, "total_revenue": 0}
-        item_data[item_name]["quantity"] += 1
-        item_data[item_name]["total_revenue"] += row.get("gross_revenue", 0)
-
-    # Calculate avg price per item
-    for item_name, data in item_data.items():
-        if data["quantity"] > 0:
-            data["avg_price"] = data["total_revenue"] / data["quantity"]
-        else:
-            data["avg_price"] = 0
+        item_data[item_name] = {
+            "quantity": row.get("total_quantity", 0) or 0,
+            "total_revenue": row.get("total_revenue", 0) or 0,
+            "avg_price": row.get("avg_price", 0) or 0,
+        }
 
     # Calculate medians
     quantities = sorted([d["quantity"] for d in item_data.values()])

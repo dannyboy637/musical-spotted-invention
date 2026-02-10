@@ -259,31 +259,31 @@ class TestOverviewEndpoint:
             sub="test-user", role="owner", tenant_id="test-tenant"
         )
 
-        mock_rpc_data = {
+        mock_overview_data = {
             "total_revenue": 2000000,
             "total_transactions": 800,
             "unique_receipts": 500,
             "avg_ticket": 2500,
         }
 
-        # Mock the supabase calls
-        mock_sb = MagicMock()
-        mock_rpc_result = MagicMock()
-        mock_rpc_result.data = mock_rpc_data
-        mock_rpc_execute = MagicMock()
-        mock_rpc_execute.execute.return_value = mock_rpc_result
-        mock_sb.rpc.return_value = mock_rpc_execute
+        mock_unique_items_data = [{"unique_items": 42}]
 
-        # Mock menu_items count query
-        mock_menu_query = MagicMock()
-        mock_menu_query.select.return_value = mock_menu_query
-        mock_menu_query.eq.return_value = mock_menu_query
-        mock_menu_query.in_.return_value = mock_menu_query
-        mock_menu_query.limit.return_value = mock_menu_query
-        mock_menu_result = MagicMock()
-        mock_menu_result.count = 42
-        mock_menu_query.execute.return_value = mock_menu_result
-        mock_sb.table.return_value = mock_menu_query
+        # Mock the supabase RPC calls - return different data per RPC name
+        mock_sb = MagicMock()
+
+        def mock_rpc(name, params=None):
+            mock_execute_chain = MagicMock()
+            mock_result = MagicMock()
+            if name == "get_analytics_overview_v2":
+                mock_result.data = mock_overview_data
+            elif name == "get_analytics_unique_items_v2":
+                mock_result.data = mock_unique_items_data
+            else:
+                mock_result.data = {}
+            mock_execute_chain.execute.return_value = mock_result
+            return mock_execute_chain
+
+        mock_sb.rpc.side_effect = mock_rpc
 
         with patch("routes.analytics.supabase", mock_sb), \
              patch("routes.analytics.data_cache") as mock_cache:
@@ -316,17 +316,11 @@ class TestMenuEngineeringEndpoint:
         )
 
         mock_sb = MagicMock()
-        mock_query = MagicMock()
-        mock_query.select.return_value = mock_query
-        mock_query.eq.return_value = mock_query
-        mock_query.in_.return_value = mock_query
-        mock_query.gte.return_value = mock_query
-        mock_query.lte.return_value = mock_query
-        mock_query.order.return_value = mock_query
-        mock_result = MagicMock()
-        mock_result.data = []
-        mock_query.execute.return_value = mock_result
-        mock_sb.table.return_value = mock_query
+        mock_rpc_chain = MagicMock()
+        mock_rpc_result = MagicMock()
+        mock_rpc_result.data = []
+        mock_rpc_chain.execute.return_value = mock_rpc_result
+        mock_sb.rpc.return_value = mock_rpc_chain
 
         with patch("routes.analytics.supabase", mock_sb):
             result = await get_menu_engineering(
@@ -357,20 +351,18 @@ class TestMenuEngineeringEndpoint:
             sub="test-user", role="owner", tenant_id="test-tenant"
         )
 
-        # 3 items: one high qty + high price, one high qty + low price, one low both
+        # 3 items with v2 RPC shape: total_revenue instead of total_gross_revenue
         mock_items = [
             {
                 "item_name": "Star Item",
                 "category": "Food",
                 "macro_category": "FOOD",
-                "quadrant": None,
                 "total_quantity": 200,
-                "total_gross_revenue": 4000000,
+                "total_revenue": 4000000,
                 "avg_price": 20000,
                 "order_count": 180,
                 "is_core_menu": True,
                 "is_current_menu": True,
-                "is_excluded": False,
                 "first_sale_date": "2025-01-01",
                 "last_sale_date": "2025-01-31",
                 "cost_cents": None,
@@ -380,14 +372,12 @@ class TestMenuEngineeringEndpoint:
                 "item_name": "Plowhorse Item",
                 "category": "Food",
                 "macro_category": "FOOD",
-                "quadrant": None,
                 "total_quantity": 150,
-                "total_gross_revenue": 1500000,
+                "total_revenue": 1500000,
                 "avg_price": 10000,
                 "order_count": 140,
                 "is_core_menu": True,
                 "is_current_menu": True,
-                "is_excluded": False,
                 "first_sale_date": "2025-01-01",
                 "last_sale_date": "2025-01-31",
                 "cost_cents": None,
@@ -397,14 +387,12 @@ class TestMenuEngineeringEndpoint:
                 "item_name": "Dog Item",
                 "category": "Food",
                 "macro_category": "FOOD",
-                "quadrant": None,
                 "total_quantity": 10,
-                "total_gross_revenue": 50000,
+                "total_revenue": 50000,
                 "avg_price": 5000,
                 "order_count": 8,
                 "is_core_menu": True,
                 "is_current_menu": True,
-                "is_excluded": False,
                 "first_sale_date": "2025-01-01",
                 "last_sale_date": "2025-01-31",
                 "cost_cents": None,
@@ -413,17 +401,11 @@ class TestMenuEngineeringEndpoint:
         ]
 
         mock_sb = MagicMock()
-        mock_query = MagicMock()
-        mock_query.select.return_value = mock_query
-        mock_query.eq.return_value = mock_query
-        mock_query.in_.return_value = mock_query
-        mock_query.gte.return_value = mock_query
-        mock_query.lte.return_value = mock_query
-        mock_query.order.return_value = mock_query
-        mock_result = MagicMock()
-        mock_result.data = mock_items
-        mock_query.execute.return_value = mock_result
-        mock_sb.table.return_value = mock_query
+        mock_rpc_chain = MagicMock()
+        mock_rpc_result = MagicMock()
+        mock_rpc_result.data = mock_items
+        mock_rpc_chain.execute.return_value = mock_rpc_result
+        mock_sb.rpc.return_value = mock_rpc_chain
 
         with patch("routes.analytics.supabase", mock_sb):
             result = await get_menu_engineering(

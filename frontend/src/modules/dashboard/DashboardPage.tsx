@@ -4,10 +4,13 @@ import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { AlertBanner } from '../../components/alerts/AlertBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import { KPISection } from './KPISection'
 import { RevenueTrendChart } from './RevenueTrendChart'
 import { TopItemsTable } from './TopItemsTable'
 import { BottomItemsTable } from './BottomItemsTable'
+import { DailyBreakdownTable } from '../../components/analytics/DailyBreakdownTable'
+import { WatchListWidget } from './WatchListWidget'
 
 export function DashboardPage() {
   const { profile } = useAuthStore()
@@ -40,8 +43,12 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Dashboard" subtitle={`Overview for ${currentTenant.name}`} />
+    <div id="dashboard-export" className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        subtitle={`Overview for ${currentTenant.name}`}
+        actions={<ExportPdfButton title="Dashboard" targetId="dashboard-export" />}
+      />
 
       {/* Alert Banner */}
       <AlertBanner />
@@ -49,8 +56,14 @@ export function DashboardPage() {
       {/* KPI Cards */}
       <KPISection />
 
+      {/* Watch List Summary */}
+      <WatchListWidget />
+
       {/* Revenue Trend Chart */}
       <RevenueTrendChart />
+
+      {/* Daily Breakdown Table */}
+      <DailyBreakdownTable />
 
       {/* Top and Bottom Items */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

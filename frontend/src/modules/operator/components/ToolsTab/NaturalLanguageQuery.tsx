@@ -9,6 +9,7 @@ interface NaturalLanguageQueryProps {
 }
 
 export function NaturalLanguageQuery({ tenants }: NaturalLanguageQueryProps) {
+  const isMockMode = !import.meta.env.PROD
   const [selectedTenantId, setSelectedTenantId] = useState<string>('')
   const [query, setQuery] = useState('')
   const [conversation, setConversation] = useState<
@@ -58,13 +59,24 @@ export function NaturalLanguageQuery({ tenants }: NaturalLanguageQueryProps) {
         <div className="flex items-center gap-2">
           <Sparkles size={18} className="text-gold-500" />
           <h3 className="font-semibold text-navy-900">Ask AI</h3>
-          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-            Mock Mode
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full ${
+              isMockMode ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {isMockMode ? 'Mock Mode' : 'Coming Soon'}
           </span>
         </div>
       </div>
 
       <div className="p-4">
+        {!isMockMode && (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-600">
+            Natural language queries are not enabled in production yet. This feature will be
+            available once the backend service is connected.
+          </div>
+        )}
+
         {/* Tenant Selector */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -77,6 +89,7 @@ export function NaturalLanguageQuery({ tenants }: NaturalLanguageQueryProps) {
               setConversation([])
             }}
             className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:ring-1 focus:ring-gold-500 focus:border-gold-500"
+            disabled={!isMockMode}
           >
             <option value="">Choose a client...</option>
             {tenants.map((tenant) => (
@@ -87,7 +100,7 @@ export function NaturalLanguageQuery({ tenants }: NaturalLanguageQueryProps) {
           </select>
         </div>
 
-        {selectedTenantId && (
+        {selectedTenantId && isMockMode && (
           <>
             {/* Example Queries */}
             {conversation.length === 0 && (

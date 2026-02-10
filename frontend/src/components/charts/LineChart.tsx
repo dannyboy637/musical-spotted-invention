@@ -44,6 +44,7 @@ interface LineChartProps {
   referenceLines?: ReferenceLineConfig[];
   xAxisLabel?: string | AxisLabelConfig;
   yAxisLabel?: string | AxisLabelConfig;
+  onDataPointClick?: (dataPoint: Record<string, string | number>, index: number) => void;
 }
 
 // Custom legend component with tooltip support
@@ -101,13 +102,29 @@ export function LineChart({
   referenceLines = [],
   xAxisLabel,
   yAxisLabel,
+  onDataPointClick,
 }: LineChartProps) {
   // Parse axis label configs
   const xLabel = typeof xAxisLabel === 'string' ? { text: xAxisLabel } : xAxisLabel;
   const yLabel = typeof yAxisLabel === 'string' ? { text: yAxisLabel } : yAxisLabel;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleChartClick = (e: any) => {
+    if (onDataPointClick && e?.activePayload?.[0]?.payload) {
+      const payload = e.activePayload[0].payload as Record<string, string | number>;
+      const index = data.findIndex((d) => d[xKey] === payload[xKey]);
+      onDataPointClick(payload, index);
+    }
+  };
+
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <RechartsLineChart data={data} margin={chartConfig.margin}>
+      <RechartsLineChart
+        data={data}
+        margin={chartConfig.margin}
+        onClick={onDataPointClick ? handleChartClick : undefined}
+        style={{ cursor: onDataPointClick ? 'pointer' : 'default' }}
+      >
         {showGrid && (
           <CartesianGrid
             stroke={chartConfig.grid.stroke}
@@ -182,8 +199,22 @@ export function LineChart({
             name={line.name || line.key}
             stroke={line.color || getChartColor(index)}
             strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4, strokeWidth: 0 }}
+            dot={onDataPointClick ? { r: 3, strokeWidth: 0, fill: line.color || getChartColor(index) } : false}
+            activeDot={{
+              r: 6,
+              strokeWidth: 0,
+              cursor: onDataPointClick ? 'pointer' : 'default',
+              onClick: onDataPointClick
+                ? (_, payload) => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const p = payload as any;
+                    if (p?.payload) {
+                      const dataIndex = data.findIndex((d) => d[xKey] === p.payload[xKey]);
+                      onDataPointClick(p.payload, dataIndex);
+                    }
+                  }
+                : undefined,
+            }}
             strokeDasharray={line.strokeDasharray}
           />
         ))}

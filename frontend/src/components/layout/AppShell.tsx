@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { GlobalFilters } from './GlobalFilters'
+import { DayDeepDiveModal } from '../analytics/DayDeepDiveModal'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
@@ -88,6 +89,9 @@ export function AppShell() {
           </div>
         </main>
       </div>
+
+      {/* Day Deep Dive Modal */}
+      <DayDeepDiveModal />
     </div>
   )
 }

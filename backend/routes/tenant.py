@@ -3,7 +3,7 @@ Tenant management routes.
 """
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from middleware.auth import (
     get_current_user,
     get_user_with_tenant,
@@ -19,7 +19,7 @@ class TenantCreate(BaseModel):
     """Request body for creating a tenant."""
     name: str
     slug: str
-    settings: Optional[dict] = {}
+    settings: Optional[dict] = Field(default_factory=dict)
 
 
 class TenantUpdate(BaseModel):

@@ -270,19 +270,21 @@ export function ReportsPage() {
   const generateAllMutation = useGenerateAllReports()
   const deleteMutation = useDeleteReport()
 
-  // Only operators can access reports
-  if (profile?.role !== 'operator') {
+  // Only operators and owners can access reports
+  if (profile?.role !== 'operator' && profile?.role !== 'owner') {
     return (
       <div className="space-y-6">
         <PageHeader title="Report Center" />
         <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-8 text-center">
           <p className="text-slate-600 dark:text-slate-400">
-            Only operators can access the Report Center.
+            Only operators and owners can access the Report Center.
           </p>
         </div>
       </div>
     )
   }
+
+  const isOperator = profile?.role === 'operator'
 
   const handleGenerate = async (tenantId: string, periodType: PeriodType, style: NarrativeStyle) => {
     try {
@@ -366,19 +368,21 @@ export function ReportsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Generate All */}
-          <button
-            onClick={handleGenerateAll}
-            disabled={generateAllMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {generateAllMutation.isPending ? (
-              <Spinner size="sm" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Generate All
-          </button>
+          {/* Generate All - operator only (multi-tenant) */}
+          {isOperator && (
+            <button
+              onClick={handleGenerateAll}
+              disabled={generateAllMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {generateAllMutation.isPending ? (
+                <Spinner size="sm" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Generate All
+            </button>
+          )}
 
           {/* Generate Single */}
           <button

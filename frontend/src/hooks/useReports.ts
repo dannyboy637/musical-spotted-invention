@@ -136,7 +136,7 @@ export function useReports(options?: {
 
       return response.data
     },
-    enabled: !!accessToken && profile?.role === 'operator',
+    enabled: !!accessToken && (profile?.role === 'operator' || profile?.role === 'owner'),
   })
 }
 

@@ -1,9 +1,12 @@
 import { useState, useMemo } from 'react'
-import { Bell, RefreshCw, Filter, X, TrendingDown, TrendingUp, Star, AlertTriangle, Check, CheckSquare, Square, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Bell, RefreshCw, Filter, X, TrendingDown, TrendingUp, Star, AlertTriangle, Check, CheckSquare, Square, Trash2, ArrowRight, History } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useTenantStore } from '../../stores/tenantStore'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { ExportPdfButton } from '../../components/ui/ExportPdfButton'
 import { Spinner } from '../../components/ui/Spinner'
+import { WatchListSection } from './WatchListSection'
 import {
   useAlerts,
   useDismissAlert,
@@ -265,11 +268,30 @@ export function AlertsPage() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div id="alerts-export" className="space-y-6">
       <PageHeader
         title="Alerts"
-        subtitle={`Anomaly notifications for ${currentTenant.name}`}
+        subtitle={`Recent anomaly notifications for ${currentTenant.name} (last 7 days)`}
+        actions={<ExportPdfButton title="Alerts" targetId="alerts-export" />}
       />
+
+      {/* Link to Movements for historical analysis */}
+      <div className="bg-navy-50 border border-navy-200 rounded-lg p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <History className="h-5 w-5 text-navy-600" />
+          <div>
+            <p className="text-sm font-medium text-navy-800">Looking for historical trends?</p>
+            <p className="text-xs text-navy-600">View year-over-year comparisons, seasonal patterns, and quadrant movements.</p>
+          </div>
+        </div>
+        <Link
+          to="/movements"
+          className="flex items-center gap-2 px-4 py-2 bg-navy-600 hover:bg-navy-700 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          View Movements
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
 
       {/* Actions Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -410,6 +432,8 @@ export function AlertsPage() {
           ))}
         </div>
       )}
+
+      <WatchListSection />
     </div>
   )
 }

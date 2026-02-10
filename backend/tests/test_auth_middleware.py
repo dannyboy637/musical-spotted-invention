@@ -66,6 +66,7 @@ class TestDecodeToken:
             "sub": "user-123",
             "email": "test@test.com",
             "role": "authenticated",
+            "iss": "https://test.supabase.co/auth/v1",
         }
 
         result = decode_token("valid-token")

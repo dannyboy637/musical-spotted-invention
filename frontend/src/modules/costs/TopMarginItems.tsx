@@ -17,15 +17,16 @@ interface ItemWithMargin {
 
 interface TopMarginItemsProps {
   costOverrides: Record<string, number>
+  useMockCosts: boolean
 }
 
-export function TopMarginItems({ costOverrides }: TopMarginItemsProps) {
+export function TopMarginItems({ costOverrides, useMockCosts }: TopMarginItemsProps) {
   const { data, isLoading, error, refetch } = useMenuEngineering()
 
   const items = useMemo<ItemWithMargin[]>(() => {
     if (!data?.items) return []
 
-    const withMockCosts = generateMockCosts(data.items)
+    const withMockCosts = useMockCosts ? generateMockCosts(data.items) : data.items
     return withMockCosts
       .map((item) => {
         const cost = costOverrides[item.item_name] ?? item.cost_cents ?? 0
@@ -40,7 +41,7 @@ export function TopMarginItems({ costOverrides }: TopMarginItemsProps) {
       })
       .sort((a, b) => b.margin - a.margin)
       .slice(0, 10)
-  }, [data, costOverrides])
+  }, [data, costOverrides, useMockCosts])
 
   const columns: Column<ItemWithMargin>[] = [
     {

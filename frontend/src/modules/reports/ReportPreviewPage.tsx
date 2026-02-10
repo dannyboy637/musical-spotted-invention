@@ -100,14 +100,14 @@ export function ReportPreviewPage() {
     setRecipientEmail(report.recipient_email || '')
   }
 
-  // Only operators can access
-  if (profile?.role !== 'operator') {
+  // Only operators and owners can access
+  if (profile?.role !== 'operator' && profile?.role !== 'owner') {
     return (
       <div className="space-y-6">
         <PageHeader title="Report Preview" />
         <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-8 text-center">
           <p className="text-slate-600 dark:text-slate-400">
-            Only operators can access reports.
+            Only operators and owners can access reports.
           </p>
         </div>
       </div>

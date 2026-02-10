@@ -4,6 +4,7 @@ import { DataFreshnessSection } from './DataFreshnessSection'
 import { CSVUploadForm } from './CSVUploadForm'
 import { ImportHistoryTable } from './ImportHistoryTable'
 import { RegenerateSection } from './RegenerateSection'
+import { ItemExclusionsSection } from './ItemExclusionsSection'
 
 export function DataManagementPage() {
   const { profile } = useAuthStore()
@@ -62,6 +63,9 @@ export function DataManagementPage() {
 
       {/* Import History */}
       <ImportHistoryTable />
+
+      {/* Item Exclusions */}
+      <ItemExclusionsSection />
     </div>
   )
 }
